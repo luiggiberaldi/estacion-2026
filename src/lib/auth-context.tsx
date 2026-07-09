@@ -21,7 +21,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "em_admin_session";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AdminUser | null>(null);
+  const [user, setUser] = useState<AdminUser | null>({ email: "luiggiberaldi94@gmail.com", name: "Luiggi Beraldi", role: "superadmin" });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {

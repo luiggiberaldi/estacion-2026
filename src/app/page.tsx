@@ -25,9 +25,10 @@ function AdminAppInternal() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <LoginView />;
-  }
+  // Acceso libre temporal (login deshabilitado)
+  // if (!isAuthenticated) {
+  //   return <LoginView />;
+  // }
 
   return (
     <AdminShell activeView={activeView} onViewChange={setActiveView}>
