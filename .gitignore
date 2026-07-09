@@ -1,0 +1,39 @@
+# Dependencias
+/node_modules
+/.pnp
+.pnp.*
+
+# Build
+/.next/
+/out/
+/build
+
+# Production
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+*.pem
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.md
+!README.md
