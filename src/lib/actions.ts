@@ -282,10 +282,11 @@ export async function deleteLicense(deviceId: string): Promise<void> {
 export async function getBackups(): Promise<Backup[]> {
   const admin = getSupabaseAdmin();
 
-  // 1. Obtener respaldos reales
+  // 1. Obtener metadata de respaldos (sin `backup_data`: ese JSON completo
+  // solo se necesita al extraer un backup puntual, vía getBackupData()).
   const { data: dbBackups, error: bkpErr } = await admin
     .from("cloud_backups")
-    .select("*")
+    .select("id, device_id, updated_at, size_bytes, product_count, sales_count, customer_count")
     .order("updated_at", { ascending: false });
 
   if (bkpErr) throw new Error(`Error al obtener respaldos: ${bkpErr.message}`);
@@ -301,7 +302,7 @@ export async function getBackups(): Promise<Backup[]> {
 
   return (dbBackups || []).map((b: any) => {
     const cl = clMap.get(b.device_id) || {};
-    
+
     // Parse business_name if it contains ' | '
     const rawBusinessName = cl.business_name || '';
     const nameParts = rawBusinessName.split(' | ');
@@ -313,28 +314,19 @@ export async function getBackups(): Promise<Backup[]> {
     const last4 = b.device_id ? b.device_id.slice(-4).toUpperCase() : '0000';
     const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
-    const backupData = decompressBackupData(b.backup_data || {});
-    const innerData = backupData.data || {};
-    const idb = innerData.idb || {};
-
-    // Contar productos, ventas y clientes de las llaves correspondientes
-    const productCount = Array.isArray(idb.products) ? idb.products.length : 0;
-    const salesCount = Array.isArray(idb.sales) ? idb.sales.length : 0;
-    const customerCount = Array.isArray(idb.customers) ? idb.customers.length : 0;
-
     return {
       id: b.id,
       deviceId: b.device_id,
       alias: businessName,
       clientName: structuredClientCode,
       marketingEmail: marketingEmail,
-      sizeBytes: JSON.stringify(b.backup_data || {}).length,
+      sizeBytes: b.size_bytes || 0,
       createdAt: b.updated_at,
       status: "completed",
-      productCount,
-      salesCount,
-      customerCount,
-      shareCode: backupData.shareCode || null,
+      productCount: b.product_count || 0,
+      salesCount: b.sales_count || 0,
+      customerCount: b.customer_count || 0,
+      shareCode: null,
     };
   });
 }
