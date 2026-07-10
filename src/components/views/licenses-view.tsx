@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   KeyRound,
   Plus,
@@ -14,7 +14,10 @@ import {
   Smartphone,
   Inbox,
   Loader2,
+  Camera,
+  QrCode,
 } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -150,6 +153,120 @@ export function LicensesView() {
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  const toggleScan = () => {
+    if (isScanning) {
+      stopScanning();
+    } else {
+      setIsScanning(true);
+    }
+  };
+
+  const startScanning = async () => {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const container = document.getElementById("qr-reader-dialog");
+      if (!container) return;
+
+      const html5QrCode = new Html5Qrcode("qr-reader-dialog");
+      scannerRef.current = html5QrCode;
+
+      const config = {
+        fps: 10,
+        qrbox: (width: number, height: number) => {
+          const size = Math.min(width, height) * 0.75;
+          return { width: size, height: size };
+        },
+      };
+
+      const handleScanSuccess = async (decodedText: string) => {
+        if (decodedText) {
+          setFormDeviceId(decodedText.trim().toUpperCase());
+          await stopScanning();
+          toast({
+            title: "Código escaneado",
+            description: `ID del dispositivo: ${decodedText}`,
+          });
+        }
+      };
+
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          const backCamera = devices.find((device) => {
+            const label = device.label.toLowerCase();
+            return label.includes("back") || label.includes("rear") || label.includes("trasera") || label.includes("environment");
+          });
+          const cameraId = backCamera ? backCamera.id : devices[0].id;
+          
+          await html5QrCode.start(
+            cameraId,
+            config,
+            handleScanSuccess,
+            () => {}
+          );
+        } else {
+          await html5QrCode.start(
+            { facingMode: "environment" },
+            config,
+            handleScanSuccess,
+            () => {}
+          );
+        }
+      } catch (camErr) {
+        console.warn("[LicensesView] Fallback a cámara frontal/user:", camErr);
+        await html5QrCode.start(
+          { facingMode: "user" },
+          config,
+          handleScanSuccess,
+          () => {}
+        );
+      }
+    } catch (err: any) {
+      console.error("Error al iniciar scanner:", err);
+      toast({
+        title: "Error de cámara",
+        description: "No se pudo acceder a la cámara o permisos denegados.",
+        variant: "destructive",
+      });
+      setIsScanning(false);
+    }
+  };
+
+  const stopScanning = async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+      } catch (e) {
+        console.warn("Error al detener el scanner:", e);
+      }
+      scannerRef.current = null;
+    }
+    setIsScanning(false);
+  };
+
+  useEffect(() => {
+    if (isScanning) {
+      startScanning();
+    } else {
+      stopScanning();
+    }
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, [isScanning]);
+
+  useEffect(() => {
+    if (!generateOpen && isScanning) {
+      stopScanning();
+    }
+  }, [generateOpen]);
 
   const fetchLicenses = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -622,17 +739,45 @@ export function LicensesView() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="gen-device" className="text-xs uppercase tracking-wider text-muted-foreground">
-                ID del dispositivo *
+              <Label htmlFor="gen-device" className="text-xs uppercase tracking-wider text-muted-foreground flex justify-between items-center">
+                <span>ID del dispositivo *</span>
+                {isScanning && (
+                  <span className="text-[10px] text-destructive animate-pulse font-bold">Cámara activa...</span>
+                )}
               </Label>
-              <Input
-                id="gen-device"
-                placeholder="PDA-XXXXXXXX"
-                value={formDeviceId}
-                onChange={(e) => setFormDeviceId(e.target.value)}
-                className="font-mono"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="gen-device"
+                  placeholder="PDA-XXXXXXXX"
+                  value={formDeviceId}
+                  onChange={(e) => setFormDeviceId(e.target.value)}
+                  className="font-mono flex-1"
+                />
+                <Button
+                  type="button"
+                  variant={isScanning ? "destructive" : "outline"}
+                  size="icon"
+                  onClick={toggleScan}
+                  title={isScanning ? "Detener escaneo" : "Escanear QR con cámara"}
+                >
+                  {isScanning ? <Camera className="size-4 animate-pulse" /> : <QrCode className="size-4" />}
+                </Button>
+              </div>
             </div>
+
+            {isScanning && (
+              <div className="relative border border-border/80 rounded-2xl overflow-hidden bg-slate-950 flex flex-col items-center p-3 space-y-2">
+                <div id="qr-reader-dialog" className="w-full max-w-[280px] aspect-square rounded-xl overflow-hidden" />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={stopScanning}
+                  className="w-full text-xs font-bold"
+                >
+                  Apagar cámara
+                </Button>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="gen-alias" className="text-xs uppercase tracking-wider text-muted-foreground">
