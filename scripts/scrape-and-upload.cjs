@@ -174,8 +174,15 @@ function verifyTitleSimilarity(searchTerm, foundTitle) {
   if (searchWords.length === 0) return false;
 
   const matches = searchWords.filter(word => {
+    // Si la palabra es muy corta (menos de 4 caracteres, como "bon", "pan", "sal", "tom"),
+    // exigimos coincidencia exacta de palabra para evitar falsos positivos por subcadenas (ej. "bon" en "bicarbonato")
+    if (word.length < 4) {
+      return foundWords.some(fw => fw === word);
+    }
+    // Para palabras de 4 o más caracteres, permitimos coincidencia parcial para tolerar plurales/variaciones
     return foundWords.some(fw => fw.includes(word) || word.includes(fw));
   });
+
 
   const ratio = matches.length / searchWords.length;
   return ratio >= 0.6;
