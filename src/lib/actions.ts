@@ -286,7 +286,7 @@ export async function getBackups(): Promise<Backup[]> {
   // solo se necesita al extraer un backup puntual, vía getBackupData()).
   const { data: dbBackups, error: bkpErr } = await admin
     .from("cloud_backups")
-    .select("id, device_id, updated_at, size_bytes, product_count, sales_count, customer_count")
+    .select("id, device_id, updated_at, email")
     .order("updated_at", { ascending: false });
 
   if (bkpErr) throw new Error(`Error al obtener respaldos: ${bkpErr.message}`);
@@ -294,7 +294,7 @@ export async function getBackups(): Promise<Backup[]> {
   // 2. Obtener licencias para extraer alias y nombre de cliente
   const { data: dbCloudLicenses, error: clErr } = await admin
     .from("cloud_licenses")
-    .select("device_id, business_name, email");
+    .select("device_id, business_name, email, created_at");
 
   if (clErr) throw new Error(`Error al obtener metadatos: ${clErr.message}`);
 
@@ -319,13 +319,13 @@ export async function getBackups(): Promise<Backup[]> {
       deviceId: b.device_id,
       alias: businessName,
       clientName: structuredClientCode,
-      marketingEmail: marketingEmail,
-      sizeBytes: b.size_bytes || 0,
+      marketingEmail: marketingEmail || b.email || null,
+      sizeBytes: 0,
       createdAt: b.updated_at,
       status: "completed",
-      productCount: b.product_count || 0,
-      salesCount: b.sales_count || 0,
-      customerCount: b.customer_count || 0,
+      productCount: 0,
+      salesCount: 0,
+      customerCount: 0,
       shareCode: null,
     };
   });
