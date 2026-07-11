@@ -49,21 +49,122 @@ function getTags(slug) {
   )];
 }
 
-// Validación ultraestricta: exige que TODAS las palabras significativas del término de búsqueda estén presentes
+// Mapeos específicos de búsqueda con espacios simples
+function getSearchQuery(productName) {
+  let q = productName.toUpperCase();
+  q = q.replace(/\s+/g, ' ').trim();
+
+  const customMappings = {
+    'TRIFOGON': 'trifogon',
+    'TOM GUAYABANA': 'dulce tom',
+    'TOM PLATANO': 'dulce tom',
+    'ALISOFT PAPEL': 'alisoft',
+    'EURO': 'papel euro',
+    'BAMBOO 4 ROLLO': 'bamboo',
+    'BAMBOO UNIDA': 'bamboo',
+    'LA PAMPA': 'pampa',
+    'AURORA SOYA': 'aurora',
+    'DOÑA TITA VINAGRE': 'dona tita',
+    'CAPRI SALSA': 'capri',
+    'KETCHUP': 'ketchup',
+    'PAZCUM SALSA': 'pazcum',
+    'SARDINES OIL': 'sardinas',
+    'TWISTI': 'twisti',
+    'MARGARINA ATUN': 'margarina',
+    'DIABLITO UNDER': 'diablito',
+    'BLANCA FLOR LEUDANTE': 'blanca flor',
+    'BLANCA FLOR TODO': 'blanca flor',
+    'KONFIT AZUCAR': 'konfit',
+    'RONCO CORTA PLUMA 500 GR': 'ronco',
+    'MARY PASTA PLUMA 500 GR': 'mary',
+    'SAN SIMON LECHE 400GR': 'san simon',
+    'ARROZ MARY SUPERIOR': 'arroz mary',
+    'ARROZ MARY PREMIUM': 'arroz mary',
+    'DOÑA BELEN': 'dona belen',
+    'PRIMOR PASTA LARGA': 'primor',
+    'MARY PASTA LARGA PREMIUM 500G': 'mary pasta',
+    'SAL PROSANCA': 'prosanca',
+    'CAFÉ LA PROTECTORA 100GR': 'protectora',
+    'CAFÉ LA PROTECTORA 200GR': 'protectora',
+    'ALIVE DETERGENTE POLVO 400GR': 'alive',
+    'AVENA 400GR GRAVENCA': 'gravenca',
+    'JUMBY RIKO': 'jumby',
+    'BUEN ARROZ 900GR': 'buen arroz',
+    'HARINA BUDARE': 'budare',
+    'HARINA MARY 900G': 'harina mary',
+    'WYNCON BUZZY': 'buzzy',
+    'JABON ANITA': 'anita',
+    'LA LLAVES JABON': 'llaves',
+    'BON BON SURTIDO': 'bon bon',
+    'CARAMELO CAFÉ': 'caramelo cafe',
+    'TOALLAS WANITA': 'wanita',
+    'PRESTOBALBA DORCO AZUL , ROSADA': 'dorco',
+    'GALLETAS MARIA ALIVAL': 'galletas maria',
+    'MIMLOT JABON': 'mimlot',
+    'MAVESA MARGARINA MANTEQUILLA': 'margarina mavesa',
+    'JUSTY DURAZNO 400L': 'justy',
+    'JUSTY MANZANA 400L': 'justy',
+    'GLUP COLA 2L': 'glup',
+    'GLUP SABORES 1L': 'glup',
+    'GLUP COLA 400L': 'glup',
+    'CIGARRO CONSUL PAQ': 'consul',
+    'CIGARRO VICEBOY PAQ': 'viceboy',
+    'CHEESKING 50G': 'cheeseking',
+    'CREMA ALIDENT AZUL': 'alident',
+    'SUAVITETWL 180ML': 'suavitel',
+    'AGUA COLL 1.5L': 'agua coll',
+    'AGUA COLL 600M': 'agua coll',
+    'GALLETA COCO RANCH': 'coco ranch',
+    'GALLETA ANIMALITOS': 'animalitos',
+    'GALLETA SODA': 'galleta soda',
+    'GALLETA CLUB SOCIAL': 'club social',
+    'LECHE DOBON 120G': 'dobon',
+    'PALITO DANIBISK': 'danibisk',
+    'FLIPS 120GR CHOCO': 'flips',
+    'FLIPS 120GR DULCE': 'flips',
+    'TIP TOP CHOCO': 'tip top',
+    'GALLETA INDEPENDENCIA': 'independencia',
+    'GALLETA DANINBISK': 'danibisk',
+    'OREO TUBO': 'oreo',
+    'RAQUETY PICANTE': 'raquety',
+    'CHEESE TRIS 4G': 'cheese tris',
+    'CHISKESITOS 45G': 'chiskesitos',
+    'TOSTON TOM 80G': 'toston tom',
+    'ESPONJA AMARILLA': 'esponja',
+    'HUEVOS TIPO A und': 'huevos',
+    'MANTEQUILLA NELLY 250G': 'nelly',
+    'MAYONESAMAVESA 500G': 'mayonesa mavesa',
+    'MAYONES MAVESA 175G': 'mayonesa mavesa',
+    'DESIFENTANTE 1LT': 'desinfectante'
+  };
+
+  if (customMappings[q]) {
+    return customMappings[q];
+  }
+
+  let words = q.split(' ');
+  const noise = ['UND', 'UNIDA', 'LOTE', 'PAQ', 'PAQUE', 'PAQUETE', 'GR', 'GRS', 'KG', '1KG', '400GR', '500GR', '900G', '175G', '250G', '180ML', '200ML', '1LT', '1.5L', '2L', '1L', '400L', '600M'];
+  words = words.filter(w => !noise.includes(w) && w.length > 1);
+
+  return words.length > 0 ? words[0].toLowerCase() : q.toLowerCase();
+}
+
+// Validación de similitud
 function verifyTitleSimilarity(searchTerm, foundTitle) {
   const stopwords = new Set([
     'del', 'con', 'para', 'una', 'und', 'grs', 'tipo', 'paq', 'unds', 'unidad', 'bulto', 'bultos', 
     'superior', 'premium', 'todo', 'uso', 'corta', 'larga', 'leudante', 'fina', 'finas', 'extra', 
     '100gr', '200gr', '400gr', '500gr', '900gr', '1kg', '1lt', '2lt', '1l', '2l', '1.5l', '600m', 
     '150g', '250g', '500g', '900g', '120g', '125g', '50g', '80g', '45g', '828ml', '200ml', '50ml', 
-    '120gr', '1.9l', '180ml', '240g', '156g', '150g', '145g', '269ml', '190g', '198g', '300g'
+    '120gr', '1.9l', '180ml', '240g', '156g', '150g', '145g', '269ml', '190g', '198g', '300g', 'viveres',
+    'comida', 'alimento', 'venezuela', 'supermercado'
   ]);
 
   const clean = (str) => str
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter(w => w.length > 2 && !stopwords.has(w));
 
@@ -72,43 +173,83 @@ function verifyTitleSimilarity(searchTerm, foundTitle) {
 
   if (searchWords.length === 0) return false;
 
-  // REGLA ULTRAESTRICTA: TODAS las palabras significativas del nombre buscado deben existir en el título encontrado.
-  // Si buscamos "ARROZ MARY SUPERIOR" -> principales: ["arroz", "mary"] -> El candidato DEBE contener tanto "arroz" como "mary".
-  const allMatch = searchWords.every(word => {
-    // Permite coincidencia parcial para plurales/variaciones de palabras de al menos 4 caracteres (ej: "galleta" en "galletas")
+  const matches = searchWords.filter(word => {
     return foundWords.some(fw => fw.includes(word) || word.includes(fw));
   });
 
-  return allMatch;
+  const ratio = matches.length / searchWords.length;
+  return ratio >= 0.6;
 }
 
-async function harvestSingleProductImage(page, productName) {
-  const q = encodeURIComponent(productName);
+// --- SCRAPER 2.0 CASCADING SEARCH WITH CONTEXT ISOLATION & OPTIMIZED LOAD ---
+async function harvestSingleProductImage(browser, productName) {
+  const searchQuery = getSearchQuery(productName);
+  const q = encodeURIComponent(searchQuery);
   const stores = [
     {
       url: `https://instamarketca.com/?s=${q}&post_type=product`,
-      selector: '.box-image img',
-      name: 'InstaMarket'
+      selector: '.box-image img, img.wp-post-image, .attachment-woocommerce_thumbnail',
+      name: 'InstaMarket',
+      isWoo: true
+    },
+    {
+      url: `https://quemantequilla.online/?s=${q}&post_type=product`,
+      selector: '.box-image img, img.wp-post-image, .attachment-woocommerce_thumbnail, .product-image img',
+      name: 'QueMantequilla',
+      isWoo: true
+    },
+    {
+      url: `https://despensallena.com/?s=${q}&post_type=product`,
+      selector: '.box-image img, img.wp-post-image, .attachment-woocommerce_thumbnail, .product-image img',
+      name: 'DespensaLlena',
+      isWoo: true
+    },
+    {
+      url: `https://supermercados-paotrolado.com/?s=${q}&post_type=product`,
+      selector: '.box-image img, img.wp-post-image, .attachment-woocommerce_thumbnail, .product-image img',
+      name: 'PaOtroLado',
+      isWoo: true
     },
     {
       url: `https://tuzonamarket.com/carabobo/buscar?q=${q}`,
       selector: '.item-img img',
-      name: 'TuZona'
+      name: 'TuZona',
+      isWoo: false
     }
   ];
 
   for (const store of stores) {
+    console.log(`     🔍 Buscando en ${store.name} con query: "${searchQuery}"...`);
+    
+    // Crear contexto y página dedicada para evitar contagio de cookies, redirecciones o bloqueos
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    });
+    const page = await context.newPage();
+
+    // OPTIMIZACIÓN CRÍTICA: Bloquear hojas de estilo, fuentes y analíticas para acelerar radicalmente la carga
+    await page.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (['stylesheet', 'font', 'media'].includes(type) || route.request().url().includes('google-analytics') || route.request().url().includes('facebook')) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
+
     try {
-      await page.goto(store.url, { timeout: 12000 });
+      // Reducimos el timeout de navegación a 6 segundos para no perder tiempo en tiendas lentas
+      await page.goto(store.url, { timeout: 6000, waitUntil: 'domcontentloaded' });
       if (store.name === 'TuZona') {
-        try { await page.waitForSelector(store.selector, { timeout: 3000 }); } catch (e) {}
+        try { await page.waitForSelector(store.selector, { timeout: 2500 }); } catch (e) {}
       }
 
-      const items = await page.evaluate((selector) => {
-        const images = Array.from(document.querySelectorAll(selector));
+      const items = await page.evaluate((storeInfo) => {
+        const images = Array.from(document.querySelectorAll(storeInfo.selector));
         return images.map(img => {
           let title = img.alt || img.title || '';
-          if (!title || title.length < 5 || title.toLowerCase().includes('imagen')) {
+          
+          if (storeInfo.isWoo && (!title || title.length < 5 || title.toLowerCase().includes('imagen'))) {
             let current = img;
             for (let k = 0; k < 5; k++) {
               if (!current.parentElement) break;
@@ -124,20 +265,29 @@ async function harvestSingleProductImage(page, productName) {
               }
             }
           }
-          return { src: img.src, title: title.trim() };
+          return { src: img.src || img.getAttribute('src') || img.getAttribute('data-src') || '', title: title.trim() };
         }).filter(item => item.src && item.src.startsWith('http') && item.title.length > 3);
-      }, store.selector);
+      }, { selector: store.selector, isWoo: store.isWoo });
 
       // Buscar el primer item que cumpla la validación estricta
       for (const item of items) {
         if (verifyTitleSimilarity(productName, item.title)) {
+          console.log(`     🎯 ¡Coincidencia encontrada en ${store.name}!: "${item.title}"`);
+          await page.close();
+          await context.close();
           return item;
         }
       }
     } catch (err) {
-      // Ignorar errores
+      // Registrar silenciosamente fallo de esta tienda y avanzar
+    } finally {
+      try {
+        await page.close();
+        await context.close();
+      } catch (e) {}
     }
   }
+
   return null;
 }
 
@@ -185,13 +335,14 @@ async function run() {
     });
   }
 
+  // Conservar imagenes de catalogo conocidas correctas (como Glup Cola 2L)
   const glup = products_idb.find(p => p.name === "GLUP COLA 2L");
   if (glup) {
     glup.image = "https://sodgzkablshladvbtnes.supabase.co/storage/v1/object/public/product-images/images/glup-cola-2l.jpg";
   }
 
   const backupData = {
-    timestamp: "2026-07-10T23:55:00.000Z",
+    timestamp: "2026-07-11T03:30:00.000Z",
     version: "2.0",
     appName: "TasasAlDia_Bodegas",
     data: {
@@ -208,45 +359,41 @@ async function run() {
   };
 
   fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2), 'utf8');
-  console.log("✅ Backup re-inicializado de forma limpia.");
+  console.log("✅ Backup base de datos re-inicializado.");
 
   const pendingProducts = products_idb.filter(p => !p.image || p.image === "");
-  console.log(`📋 Total products in backup: ${products_idb.length}`);
-  console.log(`🔍 Products pending image: ${pendingProducts.length}`);
+  console.log(`📋 Total productos en el inventario: ${products_idb.length}`);
+  console.log(`🔍 Productos pendientes de imagen: ${pendingProducts.length}`);
 
   const outputDir = path.join(__dirname, '..', 'product-images');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  console.log("🌐 Launching browser for image harvesting...");
+  console.log("🌐 Lanzando navegador Chromium para recolección de fotos...");
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  });
-  const page = await context.newPage();
-
   let scrapedCount = 0;
 
   for (let i = 0; i < pendingProducts.length; i++) {
     const product = pendingProducts[i];
-    console.log(`\n[${i + 1}/${pendingProducts.length}] Searching image for: "${product.name}"...`);
+    console.log(`\n[${i + 1}/${pendingProducts.length}] Buscando foto para: "${product.name}"...`);
 
-    const harvested = await harvestSingleProductImage(page, product.name);
+    const harvested = await harvestSingleProductImage(browser, product.name);
     
     if (harvested) {
-      console.log(`   ✅ Matched image candidate: "${harvested.title}"`);
+      console.log(`   ✅ Candidato seleccionado: "${harvested.title}"`);
       const slug = getSlug(product.name);
       
       try {
         const imgRes = await fetch(harvested.src);
-        if (!imgRes.ok) throw new Error("Fetch failed");
+        if (!imgRes.ok) throw new Error("Fetch falló al descargar la imagen");
 
         const arrayBuffer = await imgRes.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
         let fileExt = contentType.split('/')[1] || 'jpg';
         if (fileExt === 'jpeg') fileExt = 'jpg';
+        if (fileExt.includes(';')) fileExt = fileExt.split(';')[0];
 
         const fileName = `${slug}.${fileExt}`;
         const localPath = path.join(outputDir, fileName);
@@ -280,20 +427,20 @@ async function run() {
         product.image = publicUrl;
         fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2), 'utf8');
 
-        console.log(`   💾 Success! Image linked and uploaded: ${publicUrl}`);
+        console.log(`   💾 ¡Imagen subida y enlazada correctamente!: ${publicUrl}`);
         scrapedCount++;
       } catch (err) {
-        console.error(`   ❌ Failed to download/upload image:`, err.message);
+        console.error(`   ❌ Error al descargar o subir imagen al almacenamiento:`, err.message);
       }
     } else {
-      console.log(`   ❌ No exact or similar image found. Skipped.`);
+      console.log(`   ❌ No se encontró coincidencia válida. Saltando.`);
     }
 
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 800));
   }
 
   await browser.close();
-  console.log(`\n🏁 Done! Successfully scraped and linked ${scrapedCount} correct images to backup.`);
+  console.log(`\n🏁 ¡Completado! Se recolectaron y enlazaron ${scrapedCount} fotos correctas en el backup.`);
 }
 
 run();
