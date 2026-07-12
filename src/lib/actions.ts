@@ -133,7 +133,7 @@ export async function createOrUpdateLicense(licenseData: {
   status?: LicenseStatus;
 }): Promise<void> {
   const admin = getSupabaseAdmin();
-  const deviceId = licenseData.deviceId.trim().toUpperCase();
+  const deviceId = licenseData.deviceId.replace(/\s+/g, '').toUpperCase();
   const now = new Date().toISOString();
 
   // Generar código autogenerado si no existe
