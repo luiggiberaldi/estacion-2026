@@ -132,6 +132,14 @@ export function BackupsView() {
   async function handleExtract(bkp: Backup) {
     setExtractingId(bkp.id);
     try {
+      if (bkp.driveUrl) {
+        window.open(bkp.driveUrl, "_blank", "noopener,noreferrer");
+        toast({
+          title: "Abriendo Google Drive",
+          description: `Descargando respaldo de ${bkp.alias ?? bkp.deviceId}`,
+        });
+        return;
+      }
       const data = await getBackupData(bkp.id);
       if (!data) {
         toast({
@@ -344,11 +352,15 @@ export function BackupsView() {
                             <DropdownMenuItem onClick={() => setDetail(bkp)}>
                               <Eye className="size-4" /> Ver detalle
                             </DropdownMenuItem>
-                            {bkp.status === "completed" && (
+                            {bkp.driveUrl ? (
+                              <DropdownMenuItem onClick={() => handleExtract(bkp)}>
+                                <Download className="size-4 text-emerald-600" /> Descargar de Drive
+                              </DropdownMenuItem>
+                            ) : bkp.status === "completed" ? (
                               <DropdownMenuItem onClick={() => handleExtract(bkp)}>
                                 <Download className="size-4" /> Extraer backup
                               </DropdownMenuItem>
-                            )}
+                            ) : null}
                             <DropdownMenuItem
                               onClick={() => handleCopyShare(bkp)}
                               disabled={!bkp.shareCode}

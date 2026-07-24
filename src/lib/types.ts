@@ -51,6 +51,7 @@ export interface Backup {
   alias: string | null;
   clientName: string | null;
   marketingEmail?: string | null;
+  driveUrl: string | null;
   sizeBytes: number;
   createdAt: string;
   status: BackupStatus;

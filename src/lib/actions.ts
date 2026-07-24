@@ -287,7 +287,7 @@ export async function getBackups(): Promise<Backup[]> {
   // solo se necesita al extraer un backup puntual, vía getBackupData()).
   const { data: dbBackups, error: bkpErr } = await admin
     .from("cloud_backups")
-    .select("id, device_id, updated_at, email")
+    .select("id, device_id, updated_at, email, backup_data")
     .order("updated_at", { ascending: false });
 
   if (bkpErr) throw new Error(`Error al obtener respaldos: ${bkpErr.message}`);
@@ -315,18 +315,26 @@ export async function getBackups(): Promise<Backup[]> {
     const last4 = b.device_id ? b.device_id.slice(-4).toUpperCase() : '0000';
     const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
+    const meta = typeof b.backup_data === "object" && b.backup_data ? b.backup_data : {};
+    const driveUrl = meta.drive_url || b.drive_url || null;
+    const sizeBytes = meta.size_bytes || b.size_bytes || 0;
+    const productCount = meta.product_count || b.product_count || 0;
+    const salesCount = meta.sales_count || b.sales_count || 0;
+    const customerCount = meta.customer_count || b.customer_count || 0;
+
     return {
       id: b.id,
       deviceId: b.device_id,
       alias: businessName,
       clientName: structuredClientCode,
       marketingEmail: marketingEmail || b.email || null,
-      sizeBytes: 0,
+      driveUrl: driveUrl,
+      sizeBytes: Number(sizeBytes),
       createdAt: b.updated_at,
       status: "completed",
-      productCount: 0,
-      salesCount: 0,
-      customerCount: 0,
+      productCount: Number(productCount),
+      salesCount: Number(salesCount),
+      customerCount: Number(customerCount),
       shareCode: null,
     };
   });
