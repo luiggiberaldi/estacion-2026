@@ -106,12 +106,14 @@ export function DemosView() {
   }, []);
 
   const filtered = useMemo(() => {
+    const now = Date.now();
     return demos
       .filter((d) => {
+        const isExpired = d.expiresAt ? new Date(d.expiresAt).getTime() < now : false;
         if (filter === "all") return true;
-        if (filter === "active") return d.daysRemaining > 0;
-        if (filter === "expiring") return d.daysRemaining > 0 && d.daysRemaining <= 3;
-        if (filter === "expired") return d.daysRemaining <= 0;
+        if (filter === "active") return !isExpired;
+        if (filter === "expiring") return !isExpired && d.daysRemaining <= 3;
+        if (filter === "expired") return isExpired;
         return true;
       })
       .sort((a, b) => a.daysRemaining - b.daysRemaining);
@@ -135,15 +137,18 @@ export function DemosView() {
     resetPage();
   }, [filter]);
 
-  const counts = useMemo(
-    () => ({
+  const counts = useMemo(() => {
+    const now = Date.now();
+    return {
       all: demos.length,
-      active: demos.filter((d) => d.daysRemaining > 0).length,
-      expiring: demos.filter((d) => d.daysRemaining > 0 && d.daysRemaining <= 3).length,
-      expired: demos.filter((d) => d.daysRemaining <= 0).length,
-    }),
-    [demos]
-  );
+      active: demos.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() >= now : true)).length,
+      expiring: demos.filter((d) => {
+        const isExp = d.expiresAt ? new Date(d.expiresAt).getTime() < now : false;
+        return !isExp && d.daysRemaining <= 3;
+      }).length,
+      expired: demos.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() < now : false)).length,
+    };
+  }, [demos]);
 
   async function handleExtend(demo: Demo) {
     setPendingId(demo.id);

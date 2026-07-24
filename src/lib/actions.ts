@@ -102,11 +102,11 @@ export async function getDemos(): Promise<Demo[]> {
   const licenses = await getLicenses();
   const now = new Date();
   return licenses
-    .filter((l) => l.type === "demo7")
+    .filter((l) => l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo"))
     .map((l) => {
       const expiresAt = l.expiresAt || new Date(now.getTime() + 7 * 86400000).toISOString();
       const diffTime = new Date(expiresAt).getTime() - now.getTime();
-      const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return {
         id: l.id,
         deviceId: l.deviceId,
@@ -115,7 +115,7 @@ export async function getDemos(): Promise<Demo[]> {
         clientPhone: l.clientPhone,
         activatedAt: l.activatedAt || l.createdAt,
         expiresAt,
-        daysRemaining,
+        daysRemaining: Math.max(0, daysRemaining),
         isOnline: l.isOnline,
         appVersion: l.appVersion,
         platform: l.platform,
