@@ -296,6 +296,8 @@ export function LicensesView() {
           ? (l.status === "revoked" || l.type === "revoked") && l.type !== "registered"
           : activeTab === "registered"
           ? l.type === "registered"
+          : activeTab === "demo7"
+          ? l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo")
           : l.status !== "revoked" && l.type === activeTab;
       if (!matchesTab) return false;
       if (!q) return true;
@@ -338,6 +340,8 @@ export function LicensesView() {
         c.registered++;
       } else if (l.status === "revoked" || l.type === "revoked") {
         c.revoked++;
+      } else if (l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo")) {
+        c.demo7++;
       } else if (l.type in c) {
         c[l.type as TabKey]++;
       }
