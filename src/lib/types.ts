@@ -1,6 +1,6 @@
 // Tipos del dominio de gestión de licencias para Precios al Día Bodega.
 
-export type LicenseType = "permanent" | "demo7" | "monthly" | "revoked" | "registered";
+export type LicenseType = "permanent" | "demo7" | "demo3" | "monthly" | "revoked" | "registered";
 export type LicenseStatus = "active" | "expired" | "revoked" | "pending";
 export type DevicePlatform = "android" | "ios" | "pwa" | "desktop";
 export type BackupStatus = "completed" | "failed" | "in_progress";

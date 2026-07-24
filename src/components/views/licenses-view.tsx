@@ -91,7 +91,8 @@ const TAB_CONFIG: { key: TabKey; label: string }[] = [
 const TYPE_LABEL: Record<LicenseType, string> = {
   permanent: "Permanente",
   monthly: "Mensual",
-  demo7: "Demo",
+  demo7: "Demo (7d)",
+  demo3: "Demo (3d)",
   revoked: "Revocada",
   registered: "Sin licencia",
 };
@@ -121,6 +122,7 @@ const TYPE_BADGE: Record<LicenseType, string> = {
   permanent: "bg-primary/10 text-primary border-transparent",
   monthly: "bg-accent/10 text-accent border-transparent",
   demo7: "bg-warning/10 text-warning border-transparent",
+  demo3: "bg-warning/10 text-warning border-transparent",
   revoked: "bg-destructive/10 text-destructive border-transparent",
   registered: "bg-secondary text-muted-foreground border-transparent",
 };
