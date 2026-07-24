@@ -78,12 +78,13 @@ import { PaginationBar } from "@/components/ui/pagination-bar";
 // Constantes y helpers de presentación
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = "permanent" | "monthly" | "demo7" | "revoked" | "registered";
+type TabKey = "permanent" | "monthly" | "demo_active" | "demo_expired" | "revoked" | "registered";
 
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
   { key: "permanent", label: "Permanentes" },
   { key: "monthly", label: "Mensuales" },
-  { key: "demo7", label: "Demos" },
+  { key: "demo_active", label: "Demos Activos" },
+  { key: "demo_expired", label: "Demos Expirados" },
   { key: "revoked", label: "Revocadas" },
   { key: "registered", label: "Sin Licencia" },
 ];
@@ -97,25 +98,34 @@ const TYPE_LABEL: Record<LicenseType, string> = {
   registered: "Sin licencia",
 };
 
+function isDemo(type?: string) {
+  return type === "demo7" || type === "demo3" || type?.startsWith("demo");
+}
+
+function isLicenseExpired(lic: License) {
+  if (!lic.expiresAt) return false;
+  return Date.now() > new Date(lic.expiresAt).getTime();
+}
+
 function statusBadge(lic: License): {
   label: string;
   className: string;
 } {
+  if (lic.status === "revoked" || lic.type === "revoked")
+    return { label: "Revocada", className: "bg-destructive/15 text-destructive border-transparent" };
+
+  if (isLicenseExpired(lic))
+    return { label: "Expirada", className: "bg-destructive/15 text-destructive border-transparent" };
+
   // Expiración próxima (7 días)
   const isExpiringSoon =
-    lic.status === "active" &&
     lic.expiresAt &&
     new Date(lic.expiresAt).getTime() - Date.now() < 7 * 86400000;
 
-  if (lic.status === "active" && !isExpiringSoon)
-    return { label: "Activa", className: "bg-success/15 text-success border-transparent" };
-  if (lic.status === "active" && isExpiringSoon)
+  if (isExpiringSoon)
     return { label: "Por expirar", className: "bg-warning/15 text-warning border-transparent" };
-  if (lic.status === "revoked" || lic.type === "revoked")
-    return { label: "Revocada", className: "bg-destructive/15 text-destructive border-transparent" };
-  if (lic.status === "expired")
-    return { label: "Expirada", className: "bg-secondary text-secondary-foreground border-transparent" };
-  return { label: "Pendiente", className: "bg-secondary text-muted-foreground border-transparent" };
+
+  return { label: "Activa", className: "bg-success/15 text-success border-transparent" };
 }
 
 const TYPE_BADGE: Record<LicenseType, string> = {
@@ -293,14 +303,22 @@ export function LicensesView() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return licenses.filter((l) => {
-      const matchesTab =
-        activeTab === "revoked"
-          ? (l.status === "revoked" || l.type === "revoked") && l.type !== "registered"
-          : activeTab === "registered"
-          ? l.type === "registered"
-          : activeTab === "demo7"
-          ? l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo")
-          : l.status !== "revoked" && l.type === activeTab;
+      const isDemoType = isDemo(l.type);
+      const expired = isLicenseExpired(l);
+
+      let matchesTab = false;
+      if (activeTab === "revoked") {
+        matchesTab = (l.status === "revoked" || l.type === "revoked") && l.type !== "registered";
+      } else if (activeTab === "registered") {
+        matchesTab = l.type === "registered";
+      } else if (activeTab === "demo_active") {
+        matchesTab = isDemoType && !expired;
+      } else if (activeTab === "demo_expired") {
+        matchesTab = isDemoType && expired;
+      } else {
+        matchesTab = l.status !== "revoked" && l.type === activeTab;
+      }
+
       if (!matchesTab) return false;
       if (!q) return true;
       return (
@@ -333,17 +351,22 @@ export function LicensesView() {
     const c: Record<TabKey, number> = {
       permanent: 0,
       monthly: 0,
-      demo7: 0,
+      demo_active: 0,
+      demo_expired: 0,
       revoked: 0,
       registered: 0,
     };
     licenses.forEach((l) => {
+      const isDemoType = isDemo(l.type);
+      const expired = isLicenseExpired(l);
+
       if (l.type === "registered") {
         c.registered++;
       } else if (l.status === "revoked" || l.type === "revoked") {
         c.revoked++;
-      } else if (l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo")) {
-        c.demo7++;
+      } else if (isDemoType) {
+        if (expired) c.demo_expired++;
+        else c.demo_active++;
       } else if (l.type in c) {
         c[l.type as TabKey]++;
       }
