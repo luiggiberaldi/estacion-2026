@@ -98,8 +98,8 @@ const TYPE_LABEL: Record<LicenseType, string> = {
   registered: "Sin licencia",
 };
 
-function isDemo(type?: string) {
-  return type === "demo7" || type === "demo3" || type?.startsWith("demo");
+function isDemo(type?: string): boolean {
+  return Boolean(type === "demo7" || type === "demo3" || type?.startsWith("demo"));
 }
 
 function isLicenseExpired(lic: License) {
