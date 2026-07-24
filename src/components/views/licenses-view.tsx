@@ -293,7 +293,9 @@ export function LicensesView() {
     return licenses.filter((l) => {
       const matchesTab =
         activeTab === "revoked"
-          ? l.status === "revoked" || l.type === "revoked"
+          ? (l.status === "revoked" || l.type === "revoked") && l.type !== "registered"
+          : activeTab === "registered"
+          ? l.type === "registered"
           : l.status !== "revoked" && l.type === activeTab;
       if (!matchesTab) return false;
       if (!q) return true;
@@ -332,8 +334,13 @@ export function LicensesView() {
       registered: 0,
     };
     licenses.forEach((l) => {
-      if (l.status === "revoked" || l.type === "revoked") c.revoked++;
-      else if (l.type in c) c[l.type as TabKey]++;
+      if (l.type === "registered") {
+        c.registered++;
+      } else if (l.status === "revoked" || l.type === "revoked") {
+        c.revoked++;
+      } else if (l.type in c) {
+        c[l.type as TabKey]++;
+      }
     });
     return c;
   }, [licenses]);

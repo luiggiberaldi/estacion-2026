@@ -20,7 +20,8 @@ function decompressBackupData(backupData: any): any {
 
 
 // Helper: Convierte is_active y expires_at al status del frontend
-function deriveStatus(is_active: boolean, expires_at: string | null): LicenseStatus {
+function deriveStatus(is_active: boolean, expires_at: string | null, type?: string): LicenseStatus {
+  if (type === "registered") return "registered" as LicenseStatus;
   if (!is_active) return "revoked";
   if (expires_at) {
     const graceEnd = new Date(expires_at).getTime() + 5 * 24 * 60 * 60 * 1000;
@@ -83,7 +84,7 @@ export async function getLicenses(): Promise<License[]> {
       clientPhone: cl.phone || null,
       marketingEmail: marketingEmail || null,
       type: l.type as LicenseType,
-      status: deriveStatus(l.is_active, l.expires_at),
+      status: deriveStatus(l.is_active, l.expires_at, l.type),
       code: l.code,
       createdAt: l.created_at,
       expiresAt: l.expires_at || null,
