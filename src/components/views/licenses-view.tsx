@@ -78,13 +78,12 @@ import { PaginationBar } from "@/components/ui/pagination-bar";
 // Constantes y helpers de presentación
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = "permanent" | "monthly" | "demo_active" | "demo_expired" | "revoked" | "registered";
+type TabKey = "permanent" | "monthly" | "demo" | "revoked" | "registered";
 
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
   { key: "permanent", label: "Permanentes" },
   { key: "monthly", label: "Mensuales" },
-  { key: "demo_active", label: "Demos Activos" },
-  { key: "demo_expired", label: "Demos Expirados" },
+  { key: "demo", label: "Demos" },
   { key: "revoked", label: "Revocadas" },
   { key: "registered", label: "Sin Licencia" },
 ];
@@ -146,6 +145,7 @@ export function LicensesView() {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("permanent");
+  const [demoSubTab, setDemoSubTab] = useState<"active" | "expired">("active");
   const [query, setQuery] = useState("");
 
   // Diálogos
@@ -311,10 +311,8 @@ export function LicensesView() {
         matchesTab = (l.status === "revoked" || l.type === "revoked") && l.type !== "registered";
       } else if (activeTab === "registered") {
         matchesTab = l.type === "registered";
-      } else if (activeTab === "demo_active") {
-        matchesTab = isDemoType && !expired;
-      } else if (activeTab === "demo_expired") {
-        matchesTab = isDemoType && expired;
+      } else if (activeTab === "demo") {
+        matchesTab = isDemoType && (demoSubTab === "active" ? !expired : expired);
       } else {
         matchesTab = l.status !== "revoked" && l.type === activeTab;
       }
@@ -327,7 +325,7 @@ export function LicensesView() {
         (l.clientName?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [licenses, activeTab, query]);
+  }, [licenses, activeTab, demoSubTab, query]);
 
   const {
     currentPage,
@@ -345,14 +343,15 @@ export function LicensesView() {
 
   useEffect(() => {
     resetPage();
-  }, [activeTab, query]);
+  }, [activeTab, demoSubTab, query]);
 
   const counts = useMemo(() => {
-    const c: Record<TabKey, number> = {
+    const c: Record<TabKey, number> & { demoActive: number; demoExpired: number } = {
       permanent: 0,
       monthly: 0,
-      demo_active: 0,
-      demo_expired: 0,
+      demo: 0,
+      demoActive: 0,
+      demoExpired: 0,
       revoked: 0,
       registered: 0,
     };
@@ -365,8 +364,9 @@ export function LicensesView() {
       } else if (l.status === "revoked" || l.type === "revoked") {
         c.revoked++;
       } else if (isDemoType) {
-        if (expired) c.demo_expired++;
-        else c.demo_active++;
+        c.demo++;
+        if (expired) c.demoExpired++;
+        else c.demoActive++;
       } else if (l.type in c) {
         c[l.type as TabKey]++;
       }
@@ -583,6 +583,41 @@ export function LicensesView() {
             </TabsTrigger>
           ))}
         </TabsList>
+
+        {activeTab === "demo" && (
+          <div className="flex items-center gap-2 mt-3 bg-muted/40 p-1 rounded-xl w-fit border border-border/40">
+            <button
+              type="button"
+              onClick={() => setDemoSubTab("active")}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                demoSubTab === "active"
+                  ? "bg-card text-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span>Demos Activos</span>
+              <Badge variant={demoSubTab === "active" ? "default" : "secondary"} className="h-4 px-1 text-[10px]">
+                {counts.demoActive}
+              </Badge>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDemoSubTab("expired")}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                demoSubTab === "expired"
+                  ? "bg-card text-foreground shadow-xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span>Demos Expirados</span>
+              <Badge variant={demoSubTab === "expired" ? "destructive" : "secondary"} className="h-4 px-1 text-[10px]">
+                {counts.demoExpired}
+              </Badge>
+            </button>
+          </div>
+        )}
 
         {TAB_CONFIG.map((t) => (
           <TabsContent key={t.key} value={t.key}>
