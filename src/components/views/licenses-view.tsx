@@ -116,10 +116,12 @@ function statusBadge(lic: License): {
   if (isLicenseExpired(lic))
     return { label: "Expirada", className: "bg-destructive/15 text-destructive border-transparent" };
 
-  // Expiración próxima (7 días)
+  // Para demos, solo "Por expirar" si queda menos de 24 horas. Para suscripciones, 7 días.
+  const isDemoType = isDemo(lic.type);
+  const thresholdMs = isDemoType ? 24 * 60 * 60 * 1000 : 7 * 86400000;
   const isExpiringSoon =
     lic.expiresAt &&
-    new Date(lic.expiresAt).getTime() - Date.now() < 7 * 86400000;
+    new Date(lic.expiresAt).getTime() - Date.now() < thresholdMs;
 
   if (isExpiringSoon)
     return { label: "Por expirar", className: "bg-warning/15 text-warning border-transparent" };
@@ -473,7 +475,7 @@ export function LicensesView() {
       try {
         await createOrUpdateLicense({
           deviceId: lic.deviceId,
-          type: "demo7",
+          type: "demo3",
           expiresAt: new Date(Date.now() + 3 * 86400000).toISOString(),
           status: "active",
         });
