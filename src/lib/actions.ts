@@ -352,6 +352,65 @@ export async function getBackupData(backupId: string): Promise<any> {
   return decompressBackupData(data?.backup_data || null);
 }
 
+export async function requestBackup(deviceId: string): Promise<void> {
+  const admin = getSupabaseAdmin();
+  const cleanId = deviceId.trim().toUpperCase();
+  const now = new Date().toISOString();
+
+  // Limpiar solicitud previa del mismo dispositivo si existe
+  await admin.from("backup_requests").delete().eq("device_id", cleanId);
+
+  const { error } = await admin.from("backup_requests").insert({
+    device_id: cleanId,
+    status: "pending",
+    created_at: now,
+    completed_at: null,
+  });
+
+  if (error) throw new Error(`Error al solicitar respaldo: ${error.message}`);
+}
+
+export async function requestAllBackups(): Promise<number> {
+  const licenses = await getLicenses();
+  const paidLicenses = licenses.filter(
+    (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
+  );
+  if (!paidLicenses.length) return 0;
+
+  const admin = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const deviceIds = paidLicenses.map((l) => l.deviceId);
+
+  // Limpiar solicitudes previas de estas cuentas
+  await admin.from("backup_requests").delete().in("device_id", deviceIds);
+
+  const payload = paidLicenses.map((l) => ({
+    device_id: l.deviceId,
+    status: "pending",
+    created_at: now,
+    completed_at: null,
+  }));
+
+  const { error } = await admin.from("backup_requests").insert(payload);
+
+  if (error) throw new Error(`Error al solicitar respaldos masivos: ${error.message}`);
+  return paidLicenses.length;
+}
+
+
+
+export async function getPendingBackupRequests(): Promise<string[]> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("backup_requests")
+    .select("device_id")
+    .eq("status", "pending");
+
+  if (error) return [];
+  return (data || []).map((r: any) => r.device_id);
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DISPOSITIVOS REGISTRADOS (Lectura de public.account_devices)
 // ─────────────────────────────────────────────────────────────────────────────

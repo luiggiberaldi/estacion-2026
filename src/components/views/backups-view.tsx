@@ -14,6 +14,10 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Send,
+  RefreshCw,
+  Radio,
+  Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +37,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -42,12 +47,25 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatBytes, formatRelative, formatDate } from "@/lib/utils";
 
-import { getBackupData } from "@/lib/actions";
-import { getBackups } from "@/lib/actions";
-import type { Backup, BackupStatus } from "@/lib/types";
+import {
+  getBackupData,
+  getBackups,
+  requestBackup,
+  requestAllBackups,
+  getPendingBackupRequests,
+  getLicenses,
+} from "@/lib/actions";
+import type { Backup, BackupStatus, License } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -87,11 +105,22 @@ export function BackupsView() {
   const [detail, setDetail] = useState<Backup | null>(null);
   const [extractingId, setExtractingId] = useState<string | null>(null);
 
+  // Solicitud manual de respaldos (solo permanentes o mensuales)
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [paidLicenses, setPaidLicenses] = useState<License[]>([]);
+  const [selectedDeviceForRequest, setSelectedDeviceForRequest] = useState<string>("all");
+  const [isSendingRequest, setIsSendingRequest] = useState(false);
+  const [pendingDeviceIds, setPendingDeviceIds] = useState<string[]>([]);
+
   const fetchBackups = async () => {
     setIsLoading(true);
     try {
-      const data = await getBackups();
-      setBackups(data);
+      const [backupsData, pendingIds] = await Promise.all([
+        getBackups(),
+        getPendingBackupRequests(),
+      ]);
+      setBackups(backupsData);
+      setPendingDeviceIds(pendingIds);
     } catch (err: any) {
       toast({
         title: "Error al obtener respaldos",
@@ -106,6 +135,51 @@ export function BackupsView() {
   useEffect(() => {
     fetchBackups();
   }, []);
+
+  const openRequestModal = async () => {
+    setIsRequestModalOpen(true);
+    try {
+      const allLicenses = await getLicenses();
+      const paid = allLicenses.filter(
+        (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
+      );
+      setPaidLicenses(paid);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+
+  const handleSendBackupRequest = async () => {
+    setIsSendingRequest(true);
+    try {
+      if (selectedDeviceForRequest === "all") {
+        const count = await requestAllBackups();
+        toast({
+          title: "Solicitudes masivas enviadas",
+          description: `Se enviaron solicitudes de respaldo a ${count} cuenta(s) permanentes/mensuales. Subirán su backup al estar en línea.`,
+        });
+      } else {
+        await requestBackup(selectedDeviceForRequest);
+        const targetLic = paidLicenses.find((l) => l.deviceId === selectedDeviceForRequest);
+        toast({
+          title: "Solicitud enviada",
+          description: `Solicitud de respaldo enviada a ${targetLic?.alias ?? selectedDeviceForRequest}.`,
+        });
+      }
+      setIsRequestModalOpen(false);
+      fetchBackups();
+    } catch (err: any) {
+      toast({
+        title: "Error al solicitar respaldo",
+        description: err.message || "No se pudo registrar la solicitud",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingRequest(false);
+    }
+  };
+
 
   const {
     currentPage,
@@ -201,8 +275,40 @@ export function BackupsView() {
 
   return (
     <div className="space-y-5">
+      {/* ── Top Header Actions ── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border/60 shadow-tone-sm">
+        <div>
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Radio className="size-4 text-emerald-500 animate-pulse" />
+            Control Remoto de Respaldos
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Solicita la generación y envío del respaldo en tiempo real a los dispositivos POS.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={openRequestModal}
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+          >
+            <Send className="size-4" />
+            Solicitar Backup Remoto
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={fetchBackups}
+            title="Refrescar respaldos"
+            className="size-9 shrink-0"
+          >
+            <RefreshCw className={cn("size-4", isLoading && "animate-spin")} />
+          </Button>
+        </div>
+      </div>
+
       {/* ── Stats cards ── */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="border-border/60 shadow-tone-sm">
@@ -462,9 +568,77 @@ export function BackupsView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Dialog Pedir Backup ── */}
+      <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
+
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="size-5 text-emerald-600" /> Solicitar Backup Remoto
+            </DialogTitle>
+            <DialogDescription>
+              Envía una señal remota a través de Supabase. Al detectar esta solicitud, el punto de venta generará su copia de seguridad y la enviará a Google Drive/Supabase.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Dispositivo Destino
+              </label>
+              <Select
+                value={selectedDeviceForRequest}
+                onValueChange={setSelectedDeviceForRequest}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecciona dispositivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">⚡ Todos las cuentas permanentes / mensuales</SelectItem>
+                  {paidLicenses.map((lic) => (
+                    <SelectItem key={lic.id} value={lic.deviceId}>
+                      {lic.alias
+                        ? `${lic.alias} (${lic.type === "permanent" ? "Permanente" : "Mensual"})`
+                        : `${lic.deviceId} (${lic.type === "permanent" ? "Permanente" : "Mensual"})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-start gap-2">
+              <Radio className="size-4 shrink-0 mt-0.5 text-emerald-500 animate-pulse" />
+              <span>
+                El dispositivo procesará el respaldo inmediatamente si la aplicación POS está abierta, o al iniciar sesión por próxima vez.
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsRequestModalOpen(false)}>
+              Cancelar
+            </Button>
+
+            <Button
+              onClick={handleSendBackupRequest}
+              disabled={isSendingRequest}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+            >
+              {isSendingRequest ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              Enviar Solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-componentes

@@ -14,6 +14,7 @@ import {
   Mail,
   Phone,
   Building2,
+  Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -47,7 +48,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatRelative, formatDate } from "@/lib/utils";
-import { getDevices, updateDeviceAlias } from "@/lib/actions";
+import { getDevices, updateDeviceAlias, requestBackup } from "@/lib/actions";
+
 import type { Device, DevicePlatform } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -154,7 +156,24 @@ export function DevicesView() {
     });
   }
 
+  async function handleRequestBackup(d: Device) {
+    try {
+      await requestBackup(d.deviceId);
+      toast({
+        title: "Solicitud enviada",
+        description: `Solicitud de respaldo remoto enviada a ${d.alias ?? d.deviceId}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error al solicitar respaldo",
+        description: err.message || "Error de servidor",
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
+
     <div className="space-y-5">
       {/* ── Mini stats inline ── */}
       {!isLoading && (
@@ -298,7 +317,11 @@ export function DevicesView() {
                           <DropdownMenuItem onClick={() => handleGenerateLicense(d)}>
                             <KeyRound className="size-4" /> Generar licencia
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRequestBackup(d)}>
+                            <Send className="size-4 text-emerald-600" /> Solicitar Backup
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
+
                           <div className="px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
                             {d.clientName ?? "Sin cliente"}
                           </div>
