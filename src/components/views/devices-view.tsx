@@ -170,6 +170,9 @@ export function DevicesView() {
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
+    }
+  }
+
   async function handleRemoteReload(d?: Device) {
     try {
       await sendRemoteReloadCommand(d?.deviceId);
