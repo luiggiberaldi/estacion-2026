@@ -15,6 +15,7 @@ import {
   Phone,
   Building2,
   Send,
+  RotateCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,7 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatRelative, formatDate } from "@/lib/utils";
-import { getDevices, updateDeviceAlias, requestBackup } from "@/lib/actions";
+import { getDevices, updateDeviceAlias, requestBackup, sendRemoteReloadCommand } from "@/lib/actions";
 
 import type { Device, DevicePlatform } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
@@ -166,6 +167,21 @@ export function DevicesView() {
     } catch (err: any) {
       toast({
         title: "Error al solicitar respaldo",
+        description: err.message || "Error de servidor",
+        variant: "destructive",
+      });
+  async function handleRemoteReload(d?: Device) {
+    try {
+      await sendRemoteReloadCommand(d?.deviceId);
+      toast({
+        title: "Comando enviado",
+        description: d
+          ? `Señal de recarga enviada a ${d.alias ?? d.deviceId}.`
+          : "Señal de recarga enviada a TODOS los Puntos de Venta conectados.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error al enviar señal",
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
@@ -319,6 +335,9 @@ export function DevicesView() {
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleRequestBackup(d)}>
                             <Send className="size-4 text-emerald-600" /> Solicitar Backup
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleRemoteReload(d)}>
+                            <RotateCw className="size-4 text-sky-500" /> Recargar POS Remoto
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
 

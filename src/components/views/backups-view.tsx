@@ -16,6 +16,7 @@ import {
   Loader2,
   Send,
   RefreshCw,
+  RotateCw,
   Radio,
   Smartphone,
 } from "lucide-react";
@@ -64,6 +65,7 @@ import {
   requestAllBackups,
   getPendingBackupRequests,
   getLicenses,
+  sendRemoteReloadCommand,
 } from "@/lib/actions";
 import type { Backup, BackupStatus, License } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
@@ -273,6 +275,22 @@ export function BackupsView() {
     }
   }
 
+  async function handleRemoteReload() {
+    try {
+      await sendRemoteReloadCommand();
+      toast({
+        title: "Comando de recarga enviado",
+        description: "Señal enviada a TODOS los Puntos de Venta conectados vía Realtime.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error al enviar señal",
+        description: err.message || "Error de servidor",
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* ── Top Header Actions ── */}
@@ -287,6 +305,15 @@ export function BackupsView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleRemoteReload}
+            className="gap-2 border-sky-500/30 text-sky-700 dark:text-sky-400 hover:bg-sky-500/10"
+            title="Enviar señal para recargar la app en todos los equipos conectados"
+          >
+            <RotateCw className="size-4 text-sky-500" />
+            Recargar POS Remoto
+          </Button>
           <Button
             onClick={openRequestModal}
             className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"

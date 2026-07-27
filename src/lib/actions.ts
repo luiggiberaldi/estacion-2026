@@ -510,3 +510,20 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     activeBackups: backups.length,
   };
 }
+
+export async function sendRemoteReloadCommand(deviceId?: string): Promise<void> {
+  const admin = getSupabaseAdmin();
+  const cleanId = deviceId ? deviceId.replace(/\s+/g, '').toUpperCase() : 'all';
+  
+  const channel = admin.channel('system_commands');
+  await channel.subscribe();
+  await channel.send({
+    type: 'broadcast',
+    event: 'force_reload',
+    payload: {
+      targetDeviceId: cleanId,
+      timestamp: Date.now(),
+    },
+  });
+  await admin.removeChannel(channel);
+}
