@@ -372,19 +372,19 @@ export async function requestBackup(deviceId: string): Promise<void> {
 
 export async function requestAllBackups(): Promise<number> {
   const licenses = await getLicenses();
-  const paidLicenses = licenses.filter(
-    (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
+  const targetLicenses = licenses.filter(
+    (l) => l.status === "active" || l.status === "registered"
   );
-  if (!paidLicenses.length) return 0;
+  if (!targetLicenses.length) return 0;
 
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const deviceIds = paidLicenses.map((l) => l.deviceId);
+  const deviceIds = targetLicenses.map((l) => l.deviceId);
 
   // Limpiar solicitudes previas de estas cuentas
   await admin.from("backup_requests").delete().in("device_id", deviceIds);
 
-  const payload = paidLicenses.map((l) => ({
+  const payload = targetLicenses.map((l) => ({
     device_id: l.deviceId,
     status: "pending",
     created_at: now,
@@ -394,7 +394,7 @@ export async function requestAllBackups(): Promise<number> {
   const { error } = await admin.from("backup_requests").insert(payload);
 
   if (error) throw new Error(`Error al solicitar respaldos masivos: ${error.message}`);
-  return paidLicenses.length;
+  return targetLicenses.length;
 }
 
 
