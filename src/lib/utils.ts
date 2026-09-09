@@ -5,7 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Determina si un tipo de licencia es de demostración (demo3, demo7, etc.). */
+export function isDemoType(type?: string | null): boolean {
+  return Boolean(type && type.startsWith("demo"))
+}
+
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;

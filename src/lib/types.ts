@@ -28,10 +28,11 @@ export interface License {
   notes: string | null;
 }
 
-/** Demo activo (derivado de licenses con type=demo7). */
+/** Demo activo (derivado de licenses con type=demo7|demo3). */
 export interface Demo {
   id: string;
   deviceId: string;
+  type: LicenseType;
   alias: string | null;
   clientName: string | null;
   clientPhone: string | null;
@@ -72,7 +73,8 @@ export interface Subscription {
   amountUsd: number;
   paymentMethod: PaymentMethod;
   startDate: string;
-  dueDate: string;
+  /** null = el backend no registra fecha de vencimiento (no se fabrica una). */
+  dueDate: string | null;
   lastPaymentDate: string | null;
   monthsPaid: number;
   gracePeriodEndsAt: string | null;

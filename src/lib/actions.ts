@@ -2,6 +2,7 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
+import { isDemoType } from "./utils";
 import { unzipSync } from "node:zlib";
 
 function decompressBackupData(backupData: any): any {
@@ -17,7 +18,6 @@ function decompressBackupData(backupData: any): any {
   }
   return backupData;
 }
-
 
 // Helper: Convierte is_active y expires_at al status del frontend
 function deriveStatus(is_active: boolean, expires_at: string | null, type?: string): LicenseStatus {
@@ -35,6 +35,18 @@ function deriveIsOnline(last_seen_at: string | null): boolean {
   if (!last_seen_at) return false;
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   return new Date(last_seen_at) > fiveMinutesAgo;
+}
+
+// Helper: Parsea 'business_name' que puede contener ' | ' para separar
+// el nombre del negocio del email de marketing.
+function parseBusinessName(raw: string | null | undefined): { businessName: string | null; marketingEmail: string | null } {
+  if (!raw) return { businessName: null, marketingEmail: null };
+  const sepIndex = raw.indexOf(" | ");
+  if (sepIndex === -1) return { businessName: raw || null, marketingEmail: null };
+  return {
+    businessName: raw.slice(0, sepIndex) || null,
+    marketingEmail: raw.slice(sepIndex + 3) || null,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,12 +76,8 @@ export async function getLicenses(): Promise<License[]> {
   // 3. Cruzar la información
   return (dbLicenses || []).map((l: any) => {
     const cl = cloudLicMap.get(l.device_id) || {};
-    
-    // Parse business_name if it contains ' | '
-    const rawBusinessName = cl.business_name || '';
-    const nameParts = rawBusinessName.split(' | ');
-    const businessName = nameParts[0] || null;
-    const marketingEmail = nameParts[1] || null;
+
+    const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
     // Structured client code: CLI-YYYYMMDD-XXXX
     const dateStr = l.created_at ? new Date(l.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
@@ -82,7 +90,7 @@ export async function getLicenses(): Promise<License[]> {
       alias: businessName,
       clientName: structuredClientCode,
       clientPhone: cl.phone || null,
-      marketingEmail: marketingEmail || null,
+      marketingEmail,
       type: l.type as LicenseType,
       status: deriveStatus(l.is_active, l.expires_at, l.type),
       code: l.code,
@@ -102,20 +110,23 @@ export async function getDemos(): Promise<Demo[]> {
   const licenses = await getLicenses();
   const now = new Date();
   return licenses
-    .filter((l) => l.type === "demo7" || l.type === "demo3" || l.type?.startsWith("demo"))
+    .filter((l) => isDemoType(l.type))
     .map((l) => {
-      const expiresAt = l.expiresAt || new Date(now.getTime() + 7 * 86400000).toISOString();
-      const diffTime = new Date(expiresAt).getTime() - now.getTime();
-      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      // Sin fecha de vencimiento real: no fabricar una. daysRemaining queda en 0
+      // y la UI muestra "sin fecha".
+      const daysRemaining = l.expiresAt
+        ? Math.max(0, Math.ceil((new Date(l.expiresAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+        : 0;
       return {
         id: l.id,
         deviceId: l.deviceId,
+        type: l.type,
         alias: l.alias,
         clientName: l.clientName,
         clientPhone: l.clientPhone,
         activatedAt: l.activatedAt || l.createdAt,
-        expiresAt,
-        daysRemaining: Math.max(0, daysRemaining),
+        expiresAt: l.expiresAt || "",
+        daysRemaining,
         isOnline: l.isOnline,
         appVersion: l.appVersion,
         platform: l.platform,
@@ -188,24 +199,28 @@ export async function createOrUpdateLicense(licenseData: {
   // 2. Escribir en la tabla 'cloud_licenses' (para metadatos de Estación Maestra)
   const { data: existingCl, error: fetchClErr } = await admin
     .from("cloud_licenses")
-    .select("id, email, business_name")
+    .select("id, email, business_name, phone")
     .eq("device_id", deviceId)
     .maybeSingle();
 
   if (fetchClErr) throw new Error(`Error al buscar metadatos de licencia: ${fetchClErr.message}`);
 
   let clErr;
-  const email = licenseData.clientName 
-    ? `${licenseData.clientName.toLowerCase().replace(/\s+/g, ".")}@example.com` 
-    : (existingCl?.email || `${deviceId.toLowerCase()}@pda.local`);
 
-  let businessNameField = licenseData.alias || null;
-  if (existingCl?.business_name && existingCl.business_name.includes(' | ')) {
-    const parts = existingCl.business_name.split(' | ');
-    const oldEmail = parts[1];
-    if (oldEmail && !businessNameField?.includes(' | ')) {
-      businessNameField = `${licenseData.alias || parts[0]} | ${oldEmail}`;
-    }
+  // No fabricar emails (@example.com es inutilizable): conservar el existente
+  // o usar el fallback local. El nombre del cliente se guarda en business_name.
+  const email = existingCl?.email || `${deviceId.toLowerCase()}@pda.local`;
+
+  // Conservar el teléfono existente si el form no envió uno nuevo.
+  const phone = licenseData.clientPhone?.trim() || existingCl?.phone || null;
+
+  // business_name guarda 'alias' y opcionalmente ' | email de marketing'.
+  // No descartar jamás el email de marketing previo al actualizar el alias.
+  const prevBusiness = existingCl?.business_name || null;
+  const { marketingEmail: prevMarketingEmail } = parseBusinessName(prevBusiness);
+  let businessNameField = licenseData.alias || (prevBusiness ? parseBusinessName(prevBusiness).businessName : null) || null;
+  if (prevMarketingEmail && businessNameField && !businessNameField.includes(" | ")) {
+    businessNameField = `${businessNameField} | ${prevMarketingEmail}`;
   }
 
   if (existingCl) {
@@ -215,7 +230,7 @@ export async function createOrUpdateLicense(licenseData: {
         email: email,
         license_type: licenseData.type,
         business_name: businessNameField,
-        phone: licenseData.clientPhone || null,
+        phone: phone,
         is_active: isActive,
         updated_at: now
       })
@@ -229,7 +244,7 @@ export async function createOrUpdateLicense(licenseData: {
         email: email,
         license_type: licenseData.type,
         business_name: businessNameField,
-        phone: licenseData.clientPhone || null,
+        phone: phone,
         is_active: isActive,
         updated_at: now
       });
@@ -243,10 +258,12 @@ export async function revokeLicense(deviceId: string): Promise<void> {
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
 
+  // Scoped por producto para no tocar licencias de otros productos del mismo dispositivo
   const { error: licErr } = await admin
     .from("licenses")
     .update({ is_active: false, updated_at: now })
-    .eq("device_id", deviceId);
+    .eq("device_id", deviceId)
+    .eq("product_id", "bodega");
 
   if (licErr) throw new Error(`Error al revocar en licenses: ${licErr.message}`);
 
@@ -261,10 +278,12 @@ export async function revokeLicense(deviceId: string): Promise<void> {
 export async function deleteLicense(deviceId: string): Promise<void> {
   const admin = getSupabaseAdmin();
 
+  // Scoped por producto para no eliminar licencias de otros productos del mismo dispositivo
   const { error: licErr } = await admin
     .from("licenses")
     .delete()
-    .eq("device_id", deviceId);
+    .eq("device_id", deviceId)
+    .eq("product_id", "bodega");
 
   if (licErr) throw new Error(`Error al eliminar de licenses: ${licErr.message}`);
 
@@ -283,11 +302,16 @@ export async function deleteLicense(deviceId: string): Promise<void> {
 export async function getBackups(): Promise<Backup[]> {
   const admin = getSupabaseAdmin();
 
-  // 1. Obtener metadata de respaldos (sin `backup_data`: ese JSON completo
-  // solo se necesita al extraer un backup puntual, vía getBackupData()).
+  // 1. Obtener metadata de respaldos. IMPORTANTE: no traer la columna completa
+  // `backup_data` (puede contener el dump comprimido entero). Extraer solo los
+  // campos de metadata via operadores JSON de PostgREST.
   const { data: dbBackups, error: bkpErr } = await admin
     .from("cloud_backups")
-    .select("id, device_id, updated_at, email, backup_data")
+    .select(
+      "id, device_id, updated_at, email, " +
+      "backup_data->>drive_url, backup_data->>size_bytes, backup_data->>product_count, " +
+      "backup_data->>sales_count, backup_data->>customer_count"
+    )
     .order("updated_at", { ascending: false });
 
   if (bkpErr) throw new Error(`Error al obtener respaldos: ${bkpErr.message}`);
@@ -304,23 +328,12 @@ export async function getBackups(): Promise<Backup[]> {
   return (dbBackups || []).map((b: any) => {
     const cl = clMap.get(b.device_id) || {};
 
-    // Parse business_name if it contains ' | '
-    const rawBusinessName = cl.business_name || '';
-    const nameParts = rawBusinessName.split(' | ');
-    const businessName = nameParts[0] || null;
-    const marketingEmail = nameParts[1] || null;
+    const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
     // Structured client code
     const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
     const last4 = b.device_id ? b.device_id.slice(-4).toUpperCase() : '0000';
     const structuredClientCode = `CLI-${dateStr}-${last4}`;
-
-    const meta = typeof b.backup_data === "object" && b.backup_data ? b.backup_data : {};
-    const driveUrl = meta.drive_url || b.drive_url || null;
-    const sizeBytes = meta.size_bytes || b.size_bytes || 0;
-    const productCount = meta.product_count || b.product_count || 0;
-    const salesCount = meta.sales_count || b.sales_count || 0;
-    const customerCount = meta.customer_count || b.customer_count || 0;
 
     return {
       id: b.id,
@@ -328,13 +341,13 @@ export async function getBackups(): Promise<Backup[]> {
       alias: businessName,
       clientName: structuredClientCode,
       marketingEmail: marketingEmail || b.email || null,
-      driveUrl: driveUrl,
-      sizeBytes: Number(sizeBytes),
+      driveUrl: b.drive_url || null,
+      sizeBytes: Number(b.size_bytes || 0),
       createdAt: b.updated_at,
       status: "completed",
-      productCount: Number(productCount),
-      salesCount: Number(salesCount),
-      customerCount: Number(customerCount),
+      productCount: Number(b.product_count || 0),
+      salesCount: Number(b.sales_count || 0),
+      customerCount: Number(b.customer_count || 0),
       shareCode: null,
     };
   });
@@ -372,19 +385,19 @@ export async function requestBackup(deviceId: string): Promise<void> {
 
 export async function requestAllBackups(): Promise<number> {
   const licenses = await getLicenses();
-  const targetLicenses = licenses.filter(
-    (l) => l.status === "active" || l.status === "registered"
+  const paidLicenses = licenses.filter(
+    (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
   );
-  if (!targetLicenses.length) return 0;
+  if (!paidLicenses.length) return 0;
 
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const deviceIds = targetLicenses.map((l) => l.deviceId);
+  const deviceIds = paidLicenses.map((l) => l.deviceId);
 
   // Limpiar solicitudes previas de estas cuentas
   await admin.from("backup_requests").delete().in("device_id", deviceIds);
 
-  const payload = targetLicenses.map((l) => ({
+  const payload = paidLicenses.map((l) => ({
     device_id: l.deviceId,
     status: "pending",
     created_at: now,
@@ -394,10 +407,8 @@ export async function requestAllBackups(): Promise<number> {
   const { error } = await admin.from("backup_requests").insert(payload);
 
   if (error) throw new Error(`Error al solicitar respaldos masivos: ${error.message}`);
-  return targetLicenses.length;
+  return paidLicenses.length;
 }
-
-
 
 export async function getPendingBackupRequests(): Promise<string[]> {
   const admin = getSupabaseAdmin();
@@ -410,6 +421,51 @@ export async function getPendingBackupRequests(): Promise<string[]> {
   return (data || []).map((r: any) => r.device_id);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMANDO REMOTO DE RECARGA (tabla supervisor_commands, mecanismo autorizado del POS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RELOAD_COMMAND_TTL_MS = 5 * 60 * 1000; // el POS ignora comandos expirados
+
+/**
+ * Inserta un comando `force_reload` en `public.supervisor_commands`, la tabla
+ * RLS autorizada que la app POS escucha (ver useRemoteCommands.js del POS).
+ * El broadcast por canal `system_commands` fue retirado del POS y sus
+ * guardrails lo prohíben explícitamente.
+ */
+export async function sendRemoteReloadCommand(deviceId?: string): Promise<number> {
+  const admin = getSupabaseAdmin();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + RELOAD_COMMAND_TTL_MS);
+
+  // Resolver los dispositivos destino
+  let targetIds: string[];
+  if (deviceId) {
+    targetIds = [deviceId.replace(/\s+/g, "").toUpperCase()];
+  } else {
+    const licenses = await getLicenses();
+    targetIds = licenses
+      .filter((l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly"))
+      .map((l) => l.deviceId);
+  }
+
+  if (!targetIds.length) return 0;
+
+  const payload = targetIds.map((targetDeviceId) => ({
+    command_id: `force_reload_${targetDeviceId}_${now.getTime()}`,
+    target_device_id: targetDeviceId,
+    command_type: "force_reload",
+    status: "pending",
+    issued_at: now.toISOString(),
+    expires_at: expiresAt.toISOString(),
+    payload: { requestedBy: "estacion-maestra" },
+    schema_version: 1,
+  }));
+
+  const { error } = await admin.from("supervisor_commands").insert(payload);
+  if (error) throw new Error(`Error al insertar comandos de recarga: ${error.message}`);
+  return targetIds.length;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DISPOSITIVOS REGISTRADOS (Lectura de public.account_devices)
@@ -436,12 +492,8 @@ export async function getDevices(): Promise<Device[]> {
 
   return (dbDevices || []).map((d: any) => {
     const cl = clMap.get(d.device_id) || {};
-    
-    // Parse business_name if it contains ' | '
-    const rawBusinessName = cl.business_name || '';
-    const nameParts = rawBusinessName.split(' | ');
-    const businessName = nameParts[0] || null;
-    const marketingEmail = nameParts[1] || null;
+
+    const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
     // Structured client code
     const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
@@ -455,7 +507,7 @@ export async function getDevices(): Promise<Device[]> {
       clientName: structuredClientCode,
       clientPhone: cl.phone || null,
       email: d.email || null,
-      marketingEmail: marketingEmail,
+      marketingEmail,
       platform: "android",
       appVersion: "2.0.0",
       registeredAt: d.created_at,
@@ -481,9 +533,12 @@ export async function updateDeviceAlias(deviceId: string, alias: string): Promis
 // ESTADÍSTICAS DEL DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(): Promise<DashboardStats> {
-  const licenses = await getLicenses();
-  const backups = await getBackups();
+export async function getDashboardStats(licenses?: License[], backups?: Backup[]): Promise<DashboardStats> {
+  // Permite reutilizar datos ya cargados por getDashboardData() sin refetch
+  if (!licenses || !backups) {
+    licenses = await getLicenses();
+    backups = await getBackups();
+  }
 
   const now = new Date();
   const in7Days = new Date(now.getTime() + 7 * 86400000);
@@ -496,7 +551,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return {
     totalLicenses: licenses.length,
     permanent: permanentCount,
-    demos: activeLicenses.filter(l => l.type === "demo7").length,
+    demos: activeLicenses.filter(l => isDemoType(l.type)).length,
     monthly: monthlyCount,
     revoked: licenses.filter(l => l.status === "revoked").length,
     registered: licenses.filter(l => l.type === "registered").length,
@@ -511,19 +566,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
-export async function sendRemoteReloadCommand(deviceId?: string): Promise<void> {
-  const admin = getSupabaseAdmin();
-  const cleanId = deviceId ? deviceId.replace(/\s+/g, '').toUpperCase() : 'all';
-  
-  const channel = admin.channel('system_commands');
-  await channel.subscribe();
-  await channel.send({
-    type: 'broadcast',
-    event: 'force_reload',
-    payload: {
-      targetDeviceId: cleanId,
-      timestamp: Date.now(),
-    },
-  });
-  await admin.removeChannel(channel);
+/**
+ * Carga los datos del dashboard en el mínimo número de round-trips.
+ * El dashboard necesita licencias y stats; getDashboardStats() reutiliza
+ * las licencias aquí obtenidas en vez de volver a consultarlas.
+ */
+export async function getDashboardData(): Promise<{ stats: DashboardStats; licenses: License[] }> {
+  const [licenses, backups] = await Promise.all([getLicenses(), getBackups()]);
+  const stats = await getDashboardStats(licenses, backups);
+  return { stats, licenses };
 }
