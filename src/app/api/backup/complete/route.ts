@@ -1,13 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import {
+  verifyBackupSecret,
+  unauthorized,
+  corsHeadersFor,
+  handleBackupOptions,
+} from '../_lib/backup-auth';
+
+export async function OPTIONS(req: Request) {
+  return handleBackupOptions(req);
+}
 
 export async function POST(req: Request) {
+  // Fail-closed: sin BACKUP_SHARED_SECRET configurado (o secreto inválido),
+  // el endpoint rechaza todo. El POS envía el header x-backup-secret.
+  if (!verifyBackupSecret(req)) return unauthorized();
+
+  const cors = corsHeadersFor(req.headers.get('origin'));
+
   try {
     const body = await req.json();
     const { deviceId, driveUrl, sizeBytes, productCount, salesCount, customerCount } = body;
 
     if (!deviceId) {
-      return NextResponse.json({ error: 'Falta el ID del dispositivo' }, { status: 400 });
+      return NextResponse.json({ error: 'Falta el ID del dispositivo' }, { status: 400, headers: cors });
     }
 
     const cleanId = String(deviceId).replace(/\s+/g, '').toUpperCase();
@@ -31,7 +47,7 @@ export async function POST(req: Request) {
 
     if (bkpErr) {
       console.error('[API Backup Complete] Error al guardar en cloud_backups:', bkpErr);
-      return NextResponse.json({ error: bkpErr.message }, { status: 500 });
+      return NextResponse.json({ error: bkpErr.message }, { status: 500, headers: cors });
     }
 
     // 2. Marcar la solicitud como completada en backup_requests
@@ -40,9 +56,9 @@ export async function POST(req: Request) {
       completed_at: new Date().toISOString()
     }).eq('device_id', cleanId);
 
-    return NextResponse.json({ success: true, deviceId: cleanId });
+    return NextResponse.json({ success: true, deviceId: cleanId }, { headers: cors });
   } catch (err: any) {
     console.error('[API Backup Complete] Error grave:', err);
-    return NextResponse.json({ error: err.message || 'Error interno del servidor' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Error interno del servidor' }, { status: 500, headers: cors });
   }
 }

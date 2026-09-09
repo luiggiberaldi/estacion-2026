@@ -76,7 +76,15 @@ Los datos provienen de Supabase mediante Server Actions con la clave
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+BACKUP_SHARED_SECRET=<hex de 32+ bytes, debe coincidir con VITE_ESTACION_BACKUP_SECRET del POS>
+# BACKUP_ALLOWED_ORIGINS=<origins extra separados por coma para CORS>
 ```
+
+Los endpoints `/api/backup/complete` y `/api/backup/relay` exigen el header
+`x-backup-secret` (comparación en tiempo constante; fail-closed si la variable
+no está configurada) y aplican CORS solo a orígenes del allowlist
+(`estacion-2026.vercel.app`, `localhost:3000/5173/4173` y los de
+`BACKUP_ALLOWED_ORIGINS`).
 
 Tablas utilizadas: `licenses`, `cloud_licenses`, `cloud_backups`, `backup_requests`,
 `account_devices`, `supervisor_commands` (comandos remotos de recarga hacia el POS),
