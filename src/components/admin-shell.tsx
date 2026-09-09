@@ -11,14 +11,10 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
-  Search,
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export type AdminView =
@@ -161,19 +157,6 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar dispositivo, alias..."
-                className="pl-9 h-9 w-64 bg-secondary/50"
-              />
-            </div>
-            <Button variant="ghost" size="icon" className="relative" aria-label="Notificaciones">
-              <Bell className="size-4" />
-              <Badge className="absolute -top-0.5 -right-0.5 size-4 p-0 text-[9px] justify-center bg-destructive text-white border-0">
-                3
-              </Badge>
-            </Button>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-1.5">
               <span className="size-2 rounded-full bg-success animate-pulse" />
               <span className="text-xs font-medium text-muted-foreground">Sistema en línea</span>

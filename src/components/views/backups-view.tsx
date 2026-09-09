@@ -18,7 +18,6 @@ import {
   RefreshCw,
   RotateCw,
   Radio,
-  Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -277,11 +276,19 @@ export function BackupsView() {
 
   async function handleRemoteReload() {
     try {
-      await sendRemoteReloadCommand();
-      toast({
-        title: "Comando de recarga enviado",
-        description: "Señal enviada a TODOS los Puntos de Venta conectados vía Realtime.",
-      });
+      const count = await sendRemoteReloadCommand();
+      toast(
+        count > 0
+          ? {
+              title: "Comando de recarga enviado",
+              description: `Comando insertado para ${count} cuenta(s) activa(s). El POS lo procesará al sincronizar comandos remotos.`,
+            }
+          : {
+              title: "Sin destinatarios",
+              description: "No hay cuentas permanentes/mensuales activas a quienes recargar.",
+              variant: "destructive",
+            }
+      );
     } catch (err: any) {
       toast({
         title: "Error al enviar señal",
@@ -418,10 +425,21 @@ export function BackupsView() {
               paginatedBackups.map((bkp) => {
                 const sm = STATUS_META[bkp.status];
                 const StatusIcon = sm.icon;
+                const hasPendingRequest = pendingDeviceIds.includes(bkp.deviceId);
                 return (
                   <TableRow key={bkp.id} className="group">
                     <TableCell className="pl-4 font-mono text-xs text-foreground">
-                      {bkp.deviceId}
+                      <div className="flex items-center gap-2">
+                        {bkp.deviceId}
+                        {hasPendingRequest && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1 text-[9px] uppercase tracking-wide border-warning/40 text-warning bg-warning/10 shrink-0"
+                          >
+                            Solicitado
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-foreground">
                       {bkp.alias ?? (

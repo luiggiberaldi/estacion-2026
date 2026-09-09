@@ -153,9 +153,12 @@ export function DemosView() {
   async function handleExtend(demo: Demo) {
     setPendingId(demo.id);
     try {
-      const newExpiresAt = new Date(
-        new Date(demo.expiresAt).getTime() + 3 * 86400000
-      ).toISOString();
+      // Extiende desde el vencimiento real (o desde hoy si ya expiró): +7 días
+      const base = Math.max(
+        demo.expiresAt ? new Date(demo.expiresAt).getTime() : 0,
+        Date.now()
+      );
+      const newExpiresAt = new Date(base + 7 * 86400000).toISOString();
 
       await createOrUpdateLicense({
         deviceId: demo.deviceId,
@@ -166,7 +169,7 @@ export function DemosView() {
 
       toast({
         title: "Demo extendida",
-        description: `${demo.alias ?? demo.deviceId} · +3 días`,
+        description: `${demo.alias ?? demo.deviceId} · +7 días`,
       });
       await fetchDemos(false);
     } catch (err: any) {
@@ -288,7 +291,9 @@ export function DemosView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedDemos.map((demo) => {
             const PlatformIcon = PLATFORM_ICON[demo.platform];
-            const pct = Math.max(0, Math.min(100, (demo.daysRemaining / 7) * 100));
+            // Duración real de la demo (demo7 = 7 días, demo3 = 3 días)
+            const demoDurationDays = demo.type === "demo3" ? 3 : 7;
+            const pct = Math.max(0, Math.min(100, (demo.daysRemaining / demoDurationDays) * 100));
             const ub = urgencyBadge(demo.daysRemaining);
             const isExpired = demo.daysRemaining <= 0;
             const isPending = pendingId === demo.id;

@@ -150,11 +150,21 @@ export function DevicesView() {
     }
   }
 
-  function handleGenerateLicense(d: Device) {
-    toast({
-      title: "Licencia generada",
-      description: `Dispositivo ${d.alias ?? d.deviceId} listo para activación.`,
-    });
+  async function handleGenerateLicense(d: Device) {
+    try {
+      // Acción real: copiar el ID del dispositivo para pegarlo en Licencias → Generar licencia
+      await navigator.clipboard.writeText(d.deviceId);
+      toast({
+        title: "ID del dispositivo copiado",
+        description: `${d.deviceId} — pégalo en Licencias → "Generar licencia" para activarlo.`,
+      });
+    } catch {
+      toast({
+        title: "No se pudo copiar",
+        description: `Copia manualmente el ID: ${d.deviceId}`,
+        variant: "destructive",
+      });
+    }
   }
 
   async function handleRequestBackup(d: Device) {
@@ -175,12 +185,12 @@ export function DevicesView() {
 
   async function handleRemoteReload(d?: Device) {
     try {
-      await sendRemoteReloadCommand(d?.deviceId);
+      const count = await sendRemoteReloadCommand(d?.deviceId);
       toast({
         title: "Comando enviado",
         description: d
-          ? `Señal de recarga enviada a ${d.alias ?? d.deviceId}.`
-          : "Señal de recarga enviada a TODOS los Puntos de Venta conectados.",
+          ? `Comando de recarga insertado para ${d.alias ?? d.deviceId}. El POS lo procesará al sincronizar comandos remotos.`
+          : `Comando insertado para ${count} cuenta(s) activa(s). El POS lo procesará al sincronizar comandos remotos.`,
       });
     } catch (err: any) {
       toast({

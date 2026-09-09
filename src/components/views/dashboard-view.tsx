@@ -6,8 +6,6 @@ import {
   Clock,
   DollarSign,
   AlertCircle,
-  ArrowUpRight,
-  ArrowDownRight,
   Activity,
   DatabaseBackup,
   Ban,
@@ -19,8 +17,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatCurrency, formatRelative } from "@/lib/utils";
-import { getDashboardStats, getLicenses } from "@/lib/actions";
+import { cn, formatCurrency, formatRelative, isDemoType } from "@/lib/utils";
+import { getDashboardData } from "@/lib/actions";
 import type { ActivityLog, Demo } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,13 +56,12 @@ interface KpiCardProps {
   icon: LucideIcon;
   label: string;
   value: string;
-  trend?: { value: string; up: boolean };
   tone: string;
   delay: number;
   visible: boolean;
 }
 
-function KpiCard({ icon: Icon, label, value, trend, tone, delay, visible }: KpiCardProps) {
+function KpiCard({ icon: Icon, label, value, tone, delay, visible }: KpiCardProps) {
   return (
     <div
       className={cn(
@@ -84,24 +81,6 @@ function KpiCard({ icon: Icon, label, value, trend, tone, delay, visible }: KpiC
             >
               <Icon className="size-5" strokeWidth={2} />
             </div>
-            {trend && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "gap-0.5 border-transparent font-medium",
-                  trend.up
-                    ? "bg-success/10 text-success"
-                    : "bg-destructive/10 text-destructive"
-                )}
-              >
-                {trend.up ? (
-                  <ArrowUpRight className="size-3" />
-                ) : (
-                  <ArrowDownRight className="size-3" />
-                )}
-                {trend.value}
-              </Badge>
-            )}
           </div>
           <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide pt-1">
             {label}
@@ -142,28 +121,24 @@ export function DashboardView() {
     const fetchDashboardData = async () => {
       try {
         setError(null);
-        const [statsData, licenses] = await Promise.all([
-          getDashboardStats(),
-          getLicenses()
-        ]);
+        const { stats: statsData, licenses } = await getDashboardData();
         setStats(statsData);
-        // Derivar demos
+        // Derivar demos (incluye demo3 y demo7; sin fechas fabricadas)
         const activeDemos = licenses
-          .filter((l) => l.type === "demo7" && l.status !== "revoked")
+          .filter((l) => isDemoType(l.type) && l.status !== "revoked")
           .map((l) => {
-            const expiresAt = l.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString();
-            const daysRemaining = Math.max(
-              0,
-              Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000)
-            );
+            const daysRemaining = l.expiresAt
+              ? Math.max(0, Math.ceil((new Date(l.expiresAt).getTime() - Date.now()) / 86400000))
+              : 0;
             return {
               id: l.id,
               deviceId: l.deviceId,
+              type: l.type,
               alias: l.alias,
               clientName: l.clientName,
               clientPhone: l.clientPhone,
               activatedAt: l.activatedAt || l.createdAt,
-              expiresAt,
+              expiresAt: l.expiresAt || "",
               daysRemaining,
               isOnline: l.isOnline,
               appVersion: l.appVersion,
@@ -179,7 +154,7 @@ export function DashboardView() {
           if (l.status === "revoked") {
             action = "LICENSE_REVOKED";
             desc = `Licencia revocada para ${l.alias || l.deviceId}`;
-          } else if (l.type === "demo7") {
+          } else if (isDemoType(l.type)) {
             action = "DEMO_ACTIVATED";
             const durationDays = l.expiresAt && l.createdAt
               ? Math.round((new Date(l.expiresAt).getTime() - new Date(l.createdAt).getTime()) / 86400000)
@@ -244,7 +219,6 @@ export function DashboardView() {
               icon={KeyRound}
               label="Total licencias"
               value={String(stats.totalLicenses)}
-              trend={{ value: "+2", up: true }}
               tone="bg-primary/15 text-primary"
               delay={0}
               visible={visible}
@@ -253,7 +227,6 @@ export function DashboardView() {
               icon={Clock}
               label="Demos activas"
               value={String(stats.demos)}
-              trend={{ value: "+1", up: true }}
               tone="bg-accent/15 text-accent"
               delay={80}
               visible={visible}
@@ -262,7 +235,6 @@ export function DashboardView() {
               icon={DollarSign}
               label="Ingresos mensuales"
               value={formatCurrency(stats.monthlyRevenue)}
-              trend={{ value: "+12%", up: true }}
               tone="bg-success/15 text-success"
               delay={160}
               visible={visible}
@@ -271,7 +243,6 @@ export function DashboardView() {
               icon={AlertCircle}
               label="Pagos pendientes"
               value={String(stats.pendingPayments)}
-              trend={{ value: "+1", up: false }}
               tone="bg-warning/15 text-warning"
               delay={240}
               visible={visible}

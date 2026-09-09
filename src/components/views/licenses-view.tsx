@@ -266,13 +266,22 @@ export function LicensesView() {
   useEffect(() => {
     if (isScanning) {
       startScanning();
-    } else {
-      stopScanning();
     }
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
+      // Limpieza completa: detener scanner, liberar cámara y resetear estado.
+      // Evita fugas al desmontar y dobles instancias en React strict mode.
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
+      if (scanner) {
+        try {
+          if (scanner.isScanning) {
+            scanner.stop().catch(() => {});
+          }
+        } catch {
+          /* no-op */
+        }
       }
+      setIsScanning(false);
     };
   }, [isScanning]);
 
@@ -965,67 +974,6 @@ export function LicensesView() {
               {detailLic.notes}
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Dialog: cambiar tipo de cuenta ── */}
-      <Dialog open={!!changeTypeLic} onOpenChange={(o) => !o && setChangeTypeLic(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="size-5 text-primary" /> Cambiar tipo de cuenta
-            </DialogTitle>
-            <DialogDescription>
-              Modifica el tipo de licencia para {changeTypeLic?.alias ?? changeTypeLic?.deviceId}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="change-type">Tipo de Licencia</Label>
-              <Select
-                value={newLicType}
-                onValueChange={(val) => setNewLicType(val as LicenseType)}
-              >
-                <SelectTrigger id="change-type">
-                  <SelectValue placeholder="Selecciona tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="permanent">Permanente</SelectItem>
-                  <SelectItem value="monthly">Mensual</SelectItem>
-                  <SelectItem value="demo7">Demo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {(newLicType === "monthly" || newLicType === "demo7") && (
-              <div className="space-y-2">
-                <Label htmlFor="change-days">
-                  {newLicType === "demo7" ? "Días de demo" : "Días de licencia"}
-                </Label>
-                <Input
-                  id="change-days"
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={newDays}
-                  onChange={(e) => setNewDays(Number(e.target.value) || 30)}
-                />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChangeTypeLic(null)} disabled={isSubmitting}>
-              Cancelar
-            </Button>
-            <Button onClick={handleChangeTypeSubmit} disabled={isSubmitting}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Guardando...
-                </>
-              ) : (
-                "Guardar"
-              )}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

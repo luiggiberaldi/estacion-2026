@@ -98,13 +98,15 @@ export function SubscriptionsView() {
       const monthlySubs = licenses
         .filter((l) => l.type === "monthly" && l.status !== "revoked")
         .map((l, i) => {
-          const dueDate = l.expiresAt || new Date(Date.now() + 15 * 86400000).toISOString();
+          // Sin vencimiento real en el backend: no fabricar fecha (+15d antes).
+          // dueDate null se muestra como "—" en la tabla.
+          const dueDate = l.expiresAt || null;
           const status =
             l.status === "revoked"
               ? "cancelled"
               : l.status === "expired"
                 ? "expired"
-                : new Date(dueDate) < new Date(Date.now() + 5 * 86400000)
+                : dueDate && new Date(dueDate) < new Date(Date.now() + 5 * 86400000)
                   ? "grace_period"
                   : "current";
           return {
@@ -120,7 +122,7 @@ export function SubscriptionsView() {
             dueDate,
             lastPaymentDate: l.activatedAt || null,
             monthsPaid: Math.max(1, Math.floor((Date.now() - new Date(l.createdAt).getTime()) / (30 * 86400000))),
-            gracePeriodEndsAt: status === "grace_period" ? new Date(new Date(dueDate).getTime() + 5 * 86400000).toISOString() : null,
+            gracePeriodEndsAt: status === "grace_period" && dueDate ? new Date(new Date(dueDate).getTime() + 5 * 86400000).toISOString() : null,
             notes: l.notes,
           };
         });
@@ -167,9 +169,13 @@ export function SubscriptionsView() {
   async function handleRegisterPayment(sub: Subscription) {
     setPendingId(sub.id);
     try {
-      const newDue = new Date(
-        new Date(sub.dueDate).getTime() + 30 * 86400000
-      ).toISOString();
+      // Anclar al vencimiento actual (o a hoy si no hay vencimiento): un cliente
+      // que paga tarde no pierde días y uno adelantado no acumula días extra.
+      const base = Math.max(
+        sub.dueDate ? new Date(sub.dueDate).getTime() : 0,
+        Date.now()
+      );
+      const newDue = new Date(base + 30 * 86400000).toISOString();
 
       await createOrUpdateLicense({
         deviceId: sub.deviceId,
@@ -197,9 +203,12 @@ export function SubscriptionsView() {
   async function handleExtend(sub: Subscription) {
     setPendingId(sub.id);
     try {
-      const newDue = new Date(
-        new Date(sub.dueDate).getTime() + 15 * 86400000
-      ).toISOString();
+      // Extensión de cortesía desde el vencimiento actual (o hoy si no hay)
+      const base = Math.max(
+        sub.dueDate ? new Date(sub.dueDate).getTime() : 0,
+        Date.now()
+      );
+      const newDue = new Date(base + 15 * 86400000).toISOString();
 
       await createOrUpdateLicense({
         deviceId: sub.deviceId,
@@ -370,7 +379,9 @@ export function SubscriptionsView() {
                     <TableCell className="text-xs">
                       <div className="flex flex-col">
                         <span className="text-foreground">
-                          {formatDate(sub.dueDate, { day: "2-digit", month: "short", year: "numeric" })}
+                          {sub.dueDate
+                            ? formatDate(sub.dueDate, { day: "2-digit", month: "short", year: "numeric" })
+                            : "—"}
                         </span>
                         {sub.lastPaymentDate && (
                           <span className="text-muted-foreground">
