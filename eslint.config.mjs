@@ -21,6 +21,22 @@ export default tseslint.config(
     },
   },
   {
+    // Scripts Node.js en CommonJS (scripts/ y scratch/): globals de node y sin reglas de TS/browser
+    files: ["**/*.cjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      // node + browser: los scrapers usan `document` dentro de page.evaluate() de Playwright
+      globals: { ...globals.node, ...globals.browser },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-console": "off",
+      "no-empty": ["warn", { allowEmptyCatch: true }],
+    },
+  },
+  {
     ignores: ["node_modules/", ".next/", "dist/", "dev.log", "install.log"],
   }
 );
