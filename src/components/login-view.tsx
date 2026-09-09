@@ -115,13 +115,6 @@ export function LoginView() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-border/60 text-center">
-            <p className="text-xs text-muted-foreground">
-              Demo: <code className="font-mono text-foreground/80">admin@preciosaldia.com</code> ·{" "}
-              <code className="font-mono text-foreground/80">admin123</code>
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

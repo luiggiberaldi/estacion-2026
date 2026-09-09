@@ -36,6 +36,8 @@ export const metadata: Metadata = {
     "Venezuela",
   ],
   authors: [{ name: "Precios al Día" }],
+  // Panel de administración: no indexar por buscadores
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({
