@@ -255,3 +255,15 @@ Cuando se haga product-aware: `backup_requests.product_id`,
 `cloud_backups.product_id`, endpoint que exija y valide el producto, y el POS
 Lite original (el que corre en campo) debe recibir el mismo fix de
 `useAutoBackup.js` que hoy solo existe en el multilocal (Pro).
+
+## 2026-09-30 — Login solo con PIN (sin correo)
+
+**Pidió luigi:** "quita el correo solo se ingresa con pin".
+
+**Cambios:**
+- `src/components/login-view.tsx`: eliminado el campo de correo electrónico; solo queda el campo PIN (con autoFocus ahora en el PIN).
+- `src/lib/auth-actions.ts`: `loginAction(pin)` sin parámetro de email; eliminada la allowlist de correos (`ADMIN_EMAILS` deja de usarse). El throttle anti-fuerza-bruta (10 intentos / 10 min) ahora se aplica por IP (`x-forwarded-for`) en vez de por email. La sesión usa identidad fija `"admin"`.
+- `src/lib/auth-context.tsx`: `login(pin)` con la nueva firma.
+- Mensaje de error cambiado de "Credenciales incorrectas" a "PIN incorrecto".
+
+**Verificación:** `npx tsc --noEmit` limpio, ESLint 0 errores, `npm run build` verde. Smoke test local con `next start`: `/login` sirve solo `id="pin"` (sin `id="email"`); `/` sin sesión sigue 307 a `/login`; `/api/backup/complete` sin secreto sigue 401.

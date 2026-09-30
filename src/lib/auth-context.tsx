@@ -11,7 +11,7 @@ interface AuthContextValue {
   user: AdminSessionUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, pin: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (pin: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -28,8 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const login = useCallback(async (email: string, pin: string) => {
-    const res = await loginAction(email, pin);
+  const login = useCallback(async (pin: string) => {
+    const res = await loginAction(pin);
     if (res.ok) {
       try {
         setUser(await getSessionUser());

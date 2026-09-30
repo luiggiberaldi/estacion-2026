@@ -5,7 +5,7 @@
 // PIN contra ADMIN_PIN_SHA256 (variable solo-servidor) en tiempo constante,
 // y se emite una cookie httpOnly firmada con ADMIN_SESSION_SECRET.
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {
   signSession,
@@ -14,7 +14,8 @@ import {
   sessionMaxAgeSeconds,
 } from "./session";
 
-const DEFAULT_ADMIN_EMAILS = "luiggiberaldi94@gmail.com,luiggiberaldi94@gmial.com";
+// Identidad fija de la sesión: el acceso es solo con PIN, sin correo.
+const ADMIN_IDENTITY = "admin";
 
 export interface AdminSessionUser {
   email: string;
@@ -22,7 +23,8 @@ export interface AdminSessionUser {
   role: "superadmin";
 }
 
-// Throttle best-effort en memoria (por instancia): 10 intentos / 10 min por email.
+// Throttle best-effort en memoria (por instancia): 10 intentos / 10 min por IP.
+// Es la principal defensa contra fuerza bruta del PIN (6 dígitos).
 const attempts = new Map<string, number[]>();
 function throttled(key: string): boolean {
   const now = Date.now();
@@ -51,7 +53,6 @@ function pinMatches(pin: string, expectedHex: string): boolean {
 }
 
 export async function loginAction(
-  email: string,
   pin: string
 ): Promise<{ ok: boolean; error?: string }> {
   const secret = process.env.ADMIN_SESSION_SECRET;
@@ -61,24 +62,21 @@ export async function loginAction(
     return { ok: false, error: "Acceso no configurado en el servidor." };
   }
 
-  const normalizedEmail = (email || "").trim().toLowerCase();
-  if (throttled(`login:${normalizedEmail}`)) {
+  const ip =
+    (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "unknown";
+  if (throttled(`login:${ip}`)) {
     return { ok: false, error: "Demasiados intentos. Espera unos minutos." };
   }
 
-  const allowed = (process.env.ADMIN_EMAILS ?? DEFAULT_ADMIN_EMAILS)
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  // Pequeña demora uniforme para no revelar qué falló ni cuándo.
+  // Pequeña demora uniforme para no facilitar timing attacks.
   await new Promise((r) => setTimeout(r, 500));
 
-  if (!allowed.includes(normalizedEmail) || !pinMatches(pin, pinHash)) {
-    return { ok: false, error: "Credenciales incorrectas" };
+  if (!pinMatches(pin, pinHash)) {
+    return { ok: false, error: "PIN incorrecto" };
   }
 
-  const value = await signSession(normalizedEmail, secret);
+  const value = await signSession(ADMIN_IDENTITY, secret);
   const jar = await cookies();
   jar.set(sessionCookieName(), value, {
     httpOnly: true,

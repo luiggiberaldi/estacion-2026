@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Shield, Lock, Mail, Loader2 } from "lucide-react";
+import { Shield, Lock, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/com
 
 export function LoginView() {
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,7 +22,7 @@ export function LoginView() {
       return;
     }
     setIsLoading(true);
-    const result = await login(email, pin);
+    const result = await login(pin);
     setIsLoading(false);
     if (!result.ok) {
       setError(result.error || "Error al iniciar sesión");
@@ -57,28 +56,8 @@ export function LoginView() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Correo electrónico
-              </Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@preciosaldia.com"
-                  className="pl-10 h-12"
-                  required
-                  autoComplete="email"
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="pin" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                PIN
+                PIN de acceso
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -93,6 +72,7 @@ export function LoginView() {
                   className="pl-10 h-12 tracking-[0.3em] text-center text-lg font-semibold"
                   required
                   autoComplete="one-time-code"
+                  autoFocus
                   minLength={6}
                   maxLength={6}
                 />
