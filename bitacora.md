@@ -208,6 +208,23 @@ queda intacto).
 personal de Supabase Management expuestos en el chat el 2026-09-29. El
 asistente no puede rotarlos (viven en sus cuentas).
 
+## Fase 7 — Deploy (2026-09-30, completada)
+
+- Commit `b5e41f3` "fixeo general..." + `99ac38b` (redeploy vacío): 21
+  archivos, rama `feat/producto-lite-pro` mergeada a `main` (fast-forward),
+  push vía `git-push.py` (sin PIN ni hash en el repo: es público).
+- Hallazgo: el push a GitHub disparaba deploys en OTRO proyecto Vercel
+  (scope `luigis-projects`, sin el dominio); el dominio de producción vive en
+  el proyecto del team `luiggi2` (`prj_0CZhkZPo07St4QJojq2uopl8rsDy`), que se
+  despliega manual con `vercel --prod`. El deploy se hizo así.
+- Variables seteadas en el proyecto (production+preview, type sensitive):
+  `ADMIN_PIN_SHA256`, `ADMIN_SESSION_SECRET` (nuevo, `openssl rand -hex 32`).
+- Verificación en producción: `/` sin sesión → 307 a `/login`; `/login` →
+  200 con campo PIN; `POST /api/backup/complete` sin secreto → 401.
+- El redeploy vacío se necesitó porque el primer push a main no movía el
+  dominio (el edge seguía sirviendo el deploy manual anterior); con
+  `vercel --prod` el dominio tomó el código nuevo de inmediato.
+
 ---
 
 ## 2026-09-30 — Fix respaldos silenciosos (parte estación)
