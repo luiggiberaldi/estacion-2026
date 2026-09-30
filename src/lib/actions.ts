@@ -75,9 +75,20 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
 
   const cloudLicMap = new Map(dbCloudLicenses?.map((cl: any) => [cl.device_id, cl]) || []);
 
+  // 2b. last_seen real por dispositivo (account_devices): única fuente honesta
+  // para "en línea" / "última conexión". licenses.updated_at se infla con
+  // acciones administrativas (p. ej. revocaciones masivas) y no sirve.
+  const { data: dbDevices } = await admin
+    .from("account_devices")
+    .select("device_id, last_seen");
+  const lastSeenMap = new Map(
+    ((dbDevices || []) as any[]).map((d) => [d.device_id, d.last_seen as string | null])
+  );
+
   // 3. Cruzar la información
   return (dbLicenses || []).map((l: any) => {
     const cl = cloudLicMap.get(l.device_id) || {};
+    const deviceLastSeen: string | null = lastSeenMap.get(l.device_id) ?? null;
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
@@ -99,11 +110,12 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       code: l.code,
       createdAt: l.created_at,
       expiresAt: l.expires_at || null,
-      lastSeenAt: l.updated_at || null, // fallback
+      lastSeenAt: deviceLastSeen,
       activatedAt: l.created_at || null,
-      appVersion: "2.0.0", // fallback
-      platform: "android", // fallback
-      isOnline: deriveIsOnline(l.updated_at),
+      // Sin columnas de plataforma/versión en account_devices: no fabricar.
+      appVersion: null,
+      platform: null,
+      isOnline: deriveIsOnline(deviceLastSeen),
       notes: cl.notes || null,
     };
   });
@@ -124,6 +136,7 @@ export async function getDemos(productId: ProductId = "bodega"): Promise<Demo[]>
         id: l.id,
         deviceId: l.deviceId,
         type: l.type,
+        status: l.status,
         alias: l.alias,
         clientName: l.clientName,
         clientPhone: l.clientPhone,
@@ -273,9 +286,20 @@ export async function revokeLicense(deviceId: string, productId: ProductId = "bo
 
   if (licErr) throw new Error(`Error al revocar en licenses: ${licErr.message}`);
 
+  // cloud_licenses es metadata GLOBAL del dispositivo (alias/negocio/email/tel),
+  // no por producto. Su is_active es un espejo: refleja si queda ALGUNA licencia
+  // activa del dispositivo en cualquier producto (nada lo lee para decidir status;
+  // el status real sale de licenses.is_active).
+  const { data: remaining } = await admin
+    .from("licenses")
+    .select("id")
+    .eq("device_id", deviceId)
+    .eq("is_active", true)
+    .limit(1);
+
   const { error: clErr } = await admin
     .from("cloud_licenses")
-    .update({ is_active: false, updated_at: now })
+    .update({ is_active: (remaining?.length ?? 0) > 0, updated_at: now })
     .eq("device_id", deviceId);
 
   if (clErr) throw new Error(`Error al revocar en cloud_licenses: ${clErr.message}`);
@@ -293,12 +317,22 @@ export async function deleteLicense(deviceId: string, productId: ProductId = "bo
 
   if (licErr) throw new Error(`Error al eliminar de licenses: ${licErr.message}`);
 
-  const { error: clErr } = await admin
-    .from("cloud_licenses")
-    .delete()
-    .eq("device_id", deviceId);
+  // La metadata de cloud_licenses es del dispositivo, no del producto: solo se
+  // borra si el dispositivo ya no tiene licencias en NINGÚN producto.
+  const { data: remaining } = await admin
+    .from("licenses")
+    .select("id")
+    .eq("device_id", deviceId)
+    .limit(1);
 
-  if (clErr) throw new Error(`Error al eliminar de cloud_licenses: ${clErr.message}`);
+  if ((remaining?.length ?? 0) === 0) {
+    const { error: clErr } = await admin
+      .from("cloud_licenses")
+      .delete()
+      .eq("device_id", deviceId);
+
+    if (clErr) throw new Error(`Error al eliminar de cloud_licenses: ${clErr.message}`);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -389,8 +423,8 @@ export async function requestBackup(deviceId: string): Promise<void> {
   if (error) throw new Error(`Error al solicitar respaldo: ${error.message}`);
 }
 
-export async function requestAllBackups(): Promise<number> {
-  const licenses = await getLicenses();
+export async function requestAllBackups(productId: ProductId): Promise<number> {
+  const licenses = await getLicenses(productId);
   const paidLicenses = licenses.filter(
     (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
   );
@@ -429,8 +463,26 @@ export async function getPendingBackupRequests(): Promise<string[]> {
 
 export interface FailedBackupRequest {
   deviceId: string;
+  alias: string | null;
   error: string | null;
   createdAt: string;
+}
+
+/** Resuelve alias comerciales para una lista de device_ids (vía cloud_licenses). */
+async function resolveBackupAliases(
+  deviceIds: string[]
+): Promise<Map<string, string | null>> {
+  const map = new Map<string, string | null>();
+  if (deviceIds.length === 0) return map;
+  const admin = getSupabaseAdmin();
+  const { data } = await admin
+    .from("cloud_licenses")
+    .select("device_id, business_name")
+    .in("device_id", deviceIds);
+  for (const row of (data || []) as any[]) {
+    map.set(row.device_id, parseBusinessName(row.business_name).businessName);
+  }
+  return map;
 }
 
 /**
@@ -445,21 +497,31 @@ export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> 
     .select("device_id, created_at, error")
     .eq("status", "failed");
 
+  let rows: Array<{ device_id: string; created_at: string; error: string | null }>;
   if (!error) {
-    return (data || []).map((r: any) => ({
-      deviceId: r.device_id,
+    rows = ((data || []) as any[]).map((r) => ({
+      device_id: r.device_id,
+      created_at: r.created_at,
       error: r.error ?? null,
-      createdAt: r.created_at,
+    }));
+  } else {
+    const retry = await admin
+      .from("backup_requests")
+      .select("device_id, created_at")
+      .eq("status", "failed");
+    if (retry.error) return [];
+    rows = ((retry.data || []) as any[]).map((r) => ({
+      device_id: r.device_id,
+      created_at: r.created_at,
+      error: null,
     }));
   }
-  const retry = await admin
-    .from("backup_requests")
-    .select("device_id, created_at")
-    .eq("status", "failed");
-  if (retry.error) return [];
-  return (retry.data || []).map((r: any) => ({
+
+  const aliasMap = await resolveBackupAliases(rows.map((r) => r.device_id));
+  return rows.map((r) => ({
     deviceId: r.device_id,
-    error: null,
+    alias: aliasMap.get(r.device_id) ?? null,
+    error: r.error,
     createdAt: r.created_at,
   }));
 }
@@ -476,17 +538,17 @@ const RELOAD_COMMAND_TTL_MS = 5 * 60 * 1000; // el POS ignora comandos expirados
  * El broadcast por canal `system_commands` fue retirado del POS y sus
  * guardrails lo prohíben explícitamente.
  */
-export async function sendRemoteReloadCommand(deviceId?: string): Promise<number> {
+export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: string): Promise<number> {
   const admin = getSupabaseAdmin();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + RELOAD_COMMAND_TTL_MS);
 
-  // Resolver los dispositivos destino
+  // Resolver los dispositivos destino (scoped por producto: nada de defaults silenciosos)
   let targetIds: string[];
   if (deviceId) {
     targetIds = [deviceId.replace(/\s+/g, "").toUpperCase()];
   } else {
-    const licenses = await getLicenses();
+    const licenses = await getLicenses(productId);
     targetIds = licenses
       .filter((l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly"))
       .map((l) => l.deviceId);
@@ -551,8 +613,9 @@ export async function getDevices(): Promise<Device[]> {
       clientPhone: cl.phone || null,
       email: d.email || null,
       marketingEmail,
-      platform: "android",
-      appVersion: "2.0.0",
+      // account_devices no tiene columnas de plataforma/versión: no fabricar.
+      platform: null,
+      appVersion: null,
       registeredAt: d.created_at,
       lastSeenAt: d.last_seen || null,
       isOnline: deriveIsOnline(d.last_seen),

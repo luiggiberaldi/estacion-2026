@@ -1,0 +1,46 @@
+-- 001-restringir-lectura-anon-licenses.sql
+-- ============================================================
+-- ESTADO: PREPARADA, **NO APLICAR** todavía.
+-- Fecha de redacción: 2026-09-30 (fixeo general Estación, Fase 5 / E2).
+--
+-- MOTIVO: hoy la anon key puede hacer SELECT directo sobre `licenses`
+-- (filas completas con códigos de activación). El endurecimiento correcto
+-- es exponer solo un RPC de verificación y revocar el SELECT anónimo.
+--
+-- POR QUÉ NO SE APLICA AHORA:
+-- 1. El POS Lite en campo (repo luiggiberaldi/preciosaldia2026, equipos
+--    reales de bodegas) verifica la licencia así:
+--      a) primero intenta `supabase.rpc('get_license_status', {p_device_id})`
+--      b) si el RPC falla o no devuelve nada, hace FALLBACK a
+--         `.from('licenses').select('type, is_active, expires_at, created_at')`
+--         directo con la anon key.
+--    El fallback (b) es código en vivo en producción. Revocar el SELECT
+--    anónimo rompería la verificación de licencias en los equipos donde
+--    el RPC no responda, dejándolos sin POS.
+-- 2. Regla de esta ronda: no tocar los repos/cliente de Lite ni Pro.
+--    Quitar el fallback (b) es un cambio de cliente y requiere release
+--    coordinado del POS Lite.
+--
+-- PLAN DE APLICACIÓN (cuando luigi lo autorice, en este orden):
+--   1. Verificar que `get_license_status` sea SECURITY DEFINER y devuelva
+--      SOLO lo necesario (type, is_active, expires_at) sin códigos:
+--        select proname, prosecdef from pg_proc where proname='get_license_status';
+--      Si no es SECURITY DEFINER, recrearlo así y dar GRANT EXECUTE a anon.
+--   2. Publicar release del POS Lite SIN el fallback de SELECT directo
+--      (solo RPC), y confirmar en campo que los equipos verifican bien.
+--   3. Recién entonces, aplicar abajo: revocar SELECT anónimo en licenses.
+-- ============================================================
+
+-- Paso 3 (solo después de 1 y 2):
+-- Revoca la lectura anónima directa; el service_role (Estación server-side)
+-- y el RPC SECURITY DEFINER siguen funcionando.
+--
+-- revoke select on public.licenses from anon;
+--
+-- Si existe una policy permisiva explícita para anon, quitarla también:
+--   drop policy if exists "Lectura pública de licencias" on public.licenses;
+--
+-- Verificación post-aplicación (con la anon key, debe fallar):
+--   select count(*) from licenses;  -- esperado: 0 filas / 42501
+-- Y el RPC debe seguir respondiendo:
+--   select get_license_status('PDA-V2-XXXX');

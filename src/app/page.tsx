@@ -26,10 +26,11 @@ function AdminAppInternal() {
     );
   }
 
-  // Acceso libre temporal (login deshabilitado)
-  // if (!isAuthenticated) {
-  //   return <LoginView />;
-  // }
+  // La autenticación la exige el middleware (src/middleware.ts); esta puerta
+  // es defensa en profundidad por si el middleware se desactiva.
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   return (
     <ProductProvider>

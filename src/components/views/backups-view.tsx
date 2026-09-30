@@ -18,6 +18,7 @@ import {
   RefreshCw,
   RotateCw,
   Radio,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,7 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { cn, formatBytes, formatRelative, formatDate } from "@/lib/utils";
+import { cn, formatBytes, formatRelative, formatDate, shortDeviceId } from "@/lib/utils";
 
 import {
   getBackupData,
@@ -68,6 +69,9 @@ import {
   sendRemoteReloadCommand,
 } from "@/lib/actions";
 import type { Backup, BackupStatus, License } from "@/lib/types";
+import type { FailedBackupRequest } from "@/lib/actions";
+import { productName } from "@/lib/products";
+import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -96,12 +100,27 @@ const STATUS_META: Record<
   },
 };
 
+/**
+ * Motivo de fallo en lenguaje de usuario.
+ * La jerga interna histórica (p. ej. "zombie", "pre-fix") se traduce;
+ * el texto original queda disponible como "Detalle técnico".
+ */
+function humanizeBackupError(error: string | null): string {
+  if (!error) return "El equipo no pudo completar el respaldo.";
+  const lower = error.toLowerCase();
+  if (lower.includes("zombie") || lower.includes("pre-fix")) {
+    return "El equipo no completó el respaldo que se le solicitó. Puedes solicitar uno nuevo.";
+  }
+  return error;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Vista principal
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function BackupsView() {
   const { toast } = useToast();
+  const { productId } = useProduct();
   const [backups, setBackups] = useState<Backup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [detail, setDetail] = useState<Backup | null>(null);
@@ -113,9 +132,9 @@ export function BackupsView() {
   const [selectedDeviceForRequest, setSelectedDeviceForRequest] = useState<string>("all");
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [pendingDeviceIds, setPendingDeviceIds] = useState<string[]>([]);
-  const [failedRequests, setFailedRequests] = useState<
-    Array<{ deviceId: string; error: string | null }>
-  >([]);
+  const [failedRequests, setFailedRequests] = useState<FailedBackupRequest[]>([]);
+  const [expandedFailedId, setExpandedFailedId] = useState<string | null>(null);
+  const [retryingDeviceId, setRetryingDeviceId] = useState<string | null>(null);
 
   const fetchBackups = async () => {
     setIsLoading(true);
@@ -146,7 +165,8 @@ export function BackupsView() {
   const openRequestModal = async () => {
     setIsRequestModalOpen(true);
     try {
-      const allLicenses = await getLicenses();
+      // Scoped al producto visible: nada de default silencioso a Lite.
+      const allLicenses = await getLicenses(productId);
       const paid = allLicenses.filter(
         (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
       );
@@ -161,10 +181,10 @@ export function BackupsView() {
     setIsSendingRequest(true);
     try {
       if (selectedDeviceForRequest === "all") {
-        const count = await requestAllBackups();
+        const count = await requestAllBackups(productId);
         toast({
           title: "Solicitudes masivas enviadas",
-          description: `Se enviaron solicitudes de respaldo a ${count} cuenta(s) permanentes/mensuales. Subirán su backup al estar en línea.`,
+          description: `Se enviaron solicitudes de respaldo a ${count} cuenta(s) permanentes/mensuales de ${productName(productId)}. Subirán su respaldo al estar en línea.`,
         });
       } else {
         await requestBackup(selectedDeviceForRequest);
@@ -206,9 +226,29 @@ export function BackupsView() {
     return {
       total: backups.length,
       sizeBytes: completed.reduce((s, b) => s + b.sizeBytes, 0),
-      failed: backups.filter((b) => b.status === "failed").length,
+      failed: failedRequests.length,
     };
-  }, [backups]);
+  }, [backups, failedRequests]);
+
+  async function handleRetryFailed(deviceId: string) {
+    setRetryingDeviceId(deviceId);
+    try {
+      await requestBackup(deviceId);
+      toast({
+        title: "Solicitud enviada",
+        description: "Se solicitó un respaldo nuevo al equipo.",
+      });
+      fetchBackups();
+    } catch (err: any) {
+      toast({
+        title: "No se pudo solicitar",
+        description: err.message || "Error de servidor",
+        variant: "destructive",
+      });
+    } finally {
+      setRetryingDeviceId(null);
+    }
+  }
 
   async function handleExtract(bkp: Backup) {
     setExtractingId(bkp.id);
@@ -242,7 +282,7 @@ export function BackupsView() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast({
-        title: "Backup extraído",
+        title: "Respaldo extraído",
         description: `${bkp.alias ?? bkp.deviceId} · ${formatBytes(bkp.sizeBytes)}`,
       });
     } catch (err: any) {
@@ -260,7 +300,7 @@ export function BackupsView() {
     if (!bkp.shareCode) {
       toast({
         title: "Sin código de compartir",
-        description: "Este backup no tiene share code asignado.",
+        description: "Este respaldo no tiene share code asignado.",
         variant: "destructive",
       });
       return;
@@ -282,16 +322,16 @@ export function BackupsView() {
 
   async function handleRemoteReload() {
     try {
-      const count = await sendRemoteReloadCommand();
+      const count = await sendRemoteReloadCommand(productId);
       toast(
         count > 0
           ? {
               title: "Comando de recarga enviado",
-              description: `Comando insertado para ${count} cuenta(s) activa(s). El POS lo procesará al sincronizar comandos remotos.`,
+              description: `Comando insertado para ${count} cuenta(s) activa(s) de ${productName(productId)}. El POS lo procesará al sincronizar comandos remotos.`,
             }
           : {
               title: "Sin destinatarios",
-              description: "No hay cuentas permanentes/mensuales activas a quienes recargar.",
+              description: `No hay cuentas permanentes/mensuales activas de ${productName(productId)} a quienes recargar.`,
               variant: "destructive",
             }
       );
@@ -332,7 +372,7 @@ export function BackupsView() {
             className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
           >
             <Send className="size-4" />
-            Solicitar Backup Remoto
+            Solicitar respaldo
           </Button>
           <Button
             variant="outline"
@@ -366,7 +406,7 @@ export function BackupsView() {
             <StatCard
               icon={DatabaseBackup}
               tone="bg-primary/15 text-primary"
-              label="Total backups"
+              label="Total de respaldos"
               value={String(stats.total)}
             />
             <StatCard
@@ -378,12 +418,98 @@ export function BackupsView() {
             <StatCard
               icon={AlertTriangle}
               tone="bg-destructive/15 text-destructive"
-              label="Backups fallidos"
+              label="Solicitudes fallidas"
               value={String(stats.failed)}
             />
           </>
         )}
       </section>
+
+      {/* ── Solicitudes fallidas ── */}
+      {!isLoading && failedRequests.length > 0 && (
+        <Card className="border-destructive/30 shadow-tone-sm">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-destructive" />
+              <h3 className="text-sm font-semibold text-foreground">
+                Solicitudes fallidas ({failedRequests.length})
+              </h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Estos equipos no pudieron completar el respaldo solicitado. Se
+              muestra el motivo en lenguaje claro; puedes solicitar un respaldo
+              nuevo cuando quieras.
+            </p>
+            <ul className="space-y-2">
+              {failedRequests.map((fr) => {
+                const expanded = expandedFailedId === fr.deviceId;
+                const retrying = retryingDeviceId === fr.deviceId;
+                return (
+                  <li
+                    key={fr.deviceId}
+                    className="rounded-lg border border-border/60 p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {fr.alias ?? shortDeviceId(fr.deviceId)}
+                        </p>
+                        <p
+                          className="text-xs text-muted-foreground font-mono truncate"
+                          title={fr.deviceId}
+                        >
+                          {shortDeviceId(fr.deviceId)} ·{" "}
+                          {formatRelative(fr.createdAt)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs shrink-0 gap-1.5"
+                        disabled={retrying}
+                        onClick={() => handleRetryFailed(fr.deviceId)}
+                      >
+                        {retrying ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Send className="size-3.5" />
+                        )}
+                        Solicitar de nuevo
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {humanizeBackupError(fr.error)}
+                    </p>
+                    {fr.error && (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setExpandedFailedId(expanded ? null : fr.deviceId)
+                        }
+                        aria-expanded={expanded}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "size-3.5 transition-transform",
+                            expanded && "rotate-180"
+                          )}
+                        />
+                        Detalle técnico
+                      </button>
+                    )}
+                    {expanded && fr.error && (
+                      <p className="text-[11px] font-mono text-muted-foreground bg-secondary/60 rounded-md p-2 break-all">
+                        {fr.error}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Tabla ── */}
       <Card className="border-border/60 shadow-tone-sm">
@@ -419,7 +545,7 @@ export function BackupsView() {
                       <Inbox className="size-5" strokeWidth={1.5} />
                     </div>
                     <p className="text-sm font-medium text-foreground">
-                      No hay backups registrados
+                      No hay respaldos registrados
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Los dispositivos sincronizarán sus respaldos automáticamente.
@@ -432,27 +558,17 @@ export function BackupsView() {
                 const sm = STATUS_META[bkp.status];
                 const StatusIcon = sm.icon;
                 const hasPendingRequest = pendingDeviceIds.includes(bkp.deviceId);
-                const failedReq = failedRequests.find((f) => f.deviceId === bkp.deviceId);
                 return (
                   <TableRow key={bkp.id} className="group">
-                    <TableCell className="pl-4 font-mono text-xs text-foreground">
+                    <TableCell className="pl-4 font-mono text-xs text-foreground whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        {bkp.deviceId}
+                        <span title={bkp.deviceId}>{shortDeviceId(bkp.deviceId)}</span>
                         {hasPendingRequest && (
                           <Badge
                             variant="outline"
                             className="h-4 px-1 text-[9px] uppercase tracking-wide border-warning/40 text-warning bg-warning/10 shrink-0"
                           >
                             Solicitado
-                          </Badge>
-                        )}
-                        {failedReq && (
-                          <Badge
-                            variant="destructive"
-                            className="h-4 px-1 text-[9px] uppercase tracking-wide shrink-0"
-                            title={failedReq.error || "El equipo no pudo completar el respaldo"}
-                          >
-                            Fallido
                           </Badge>
                         )}
                       </div>
@@ -525,7 +641,7 @@ export function BackupsView() {
                               </DropdownMenuItem>
                             ) : bkp.status === "completed" ? (
                               <DropdownMenuItem onClick={() => handleExtract(bkp)}>
-                                <Download className="size-4" /> Extraer backup
+                                <Download className="size-4" /> Extraer respaldo
                               </DropdownMenuItem>
                             ) : null}
                             <DropdownMenuItem
@@ -559,7 +675,7 @@ export function BackupsView() {
             onPrev={goPrev}
             hasNext={hasNext}
             hasPrev={hasPrev}
-            label="backups"
+            label="respaldos"
           />
         </div>
       </Card>
@@ -569,7 +685,7 @@ export function BackupsView() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HardDriveDownload className="size-5 text-primary" /> Detalle del backup
+              <HardDriveDownload className="size-5 text-primary" /> Detalle del respaldo
             </DialogTitle>
             <DialogDescription>
               Información completa del respaldo del dispositivo.
@@ -592,15 +708,6 @@ export function BackupsView() {
                 <Detail label="Creado" value={formatDate(detail.createdAt)} />
                 <Detail label="Share code" value={detail.shareCode ?? "—"} mono />
               </div>
-              {detail.status === "failed" && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive flex items-start gap-2">
-                  <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-                  <span>
-                    El backup falló durante la sincronización. El dispositivo reintentará
-                    automáticamente en la próxima conexión.
-                  </span>
-                </div>
-              )}
               {detail.status === "completed" && (
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Button
@@ -630,13 +737,13 @@ export function BackupsView() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Dialog Pedir Backup ── */}
+      {/* ── Dialog Pedir Respaldo ── */}
       <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
 
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Send className="size-5 text-emerald-600" /> Solicitar Backup Remoto
+              <Send className="size-5 text-emerald-600" /> Solicitar respaldo remoto
             </DialogTitle>
             <DialogDescription>
               Envía una señal remota a través de Supabase. Al detectar esta solicitud, el punto de venta generará su copia de seguridad y la enviará a Google Drive/Supabase.
@@ -646,7 +753,7 @@ export function BackupsView() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Dispositivo Destino
+                Dispositivo Destino · {productName(productId)}
               </label>
               <Select
                 value={selectedDeviceForRequest}

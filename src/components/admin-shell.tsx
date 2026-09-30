@@ -38,7 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Resumen general" },
   { id: "licenses", label: "Licencias", icon: KeyRound, description: "Activar, revocar, modificar" },
   { id: "demos", label: "Demos", icon: Clock, description: "Demos activas y expiradas" },
-  { id: "backups", label: "Backups", icon: DatabaseBackup, description: "Extraer respaldos" },
+  { id: "backups", label: "Respaldos", icon: DatabaseBackup, description: "Extraer respaldos" },
   { id: "subscriptions", label: "Mensualidades", icon: BadgeDollarSign, description: "Suscripciones recurrentes" },
   { id: "devices", label: "Dispositivos", icon: Smartphone, description: "Dispositivos registrados" },
 ];
@@ -147,7 +147,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
               </div>
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-sm font-medium truncate text-sidebar-foreground">{user?.name}</span>
-                <span className="text-xs text-muted-foreground truncate">{user?.email}</span>
+                <span className="text-xs text-muted-foreground truncate" title={user?.email}>{user?.email}</span>
               </div>
               <Button
                 variant="ghost"

@@ -1,68 +1,49 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+// Contexto de autenticación del lado cliente.
+// La verificación de credenciales vive SOLO en el servidor
+// (src/lib/auth-actions.ts): aquí no hay claves ni hashes.
 
-interface AdminUser {
-  email: string;
-  name: string;
-  role: "superadmin" | "operator";
-}
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { loginAction, logoutAction, getSessionUser, type AdminSessionUser } from "./auth-actions";
 
 interface AuthContextValue {
-  user: AdminUser | null;
+  user: AdminSessionUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (email: string, pin: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY = "em_admin_session";
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AdminUser | null>({ email: "luiggiberaldi94@gmail.com", name: "Luiggi Beraldi", role: "superadmin" });
+  const [user, setUser] = useState<AdminSessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setUser(JSON.parse(saved) as AdminUser);
-      }
-    } catch {
-      /* no-op */
-    } finally {
-      setIsLoading(false);
-    }
+    getSessionUser()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setIsLoading(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
-    await new Promise((r) => setTimeout(r, 600));
-    const normalizedEmail = (email || "").trim().toLowerCase();
-    const isTargetEmail = normalizedEmail === "luiggiberaldi94@gmial.com" || normalizedEmail === "luiggiberaldi94@gmail.com";
-    if (isTargetEmail && password === "24457713") {
-      const u: AdminUser = { email: normalizedEmail, name: "Luiggi Beraldi", role: "superadmin" };
-      setUser(u);
+  const login = useCallback(async (email: string, pin: string) => {
+    const res = await loginAction(email, pin);
+    if (res.ok) {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+        setUser(await getSessionUser());
       } catch {
-        /* no-op */
+        setUser(null);
       }
-      return { ok: true };
     }
-    return { ok: false, error: "Credenciales incorrectas" };
-  };
+    return res;
+  }, []);
 
-
-  const logout = () => {
+  const logout = useCallback(() => {
+    logoutAction().catch(() => {});
     setUser(null);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* no-op */
-    }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider

@@ -26,6 +26,11 @@ export function formatDate(iso: string | null, opts?: Intl.DateTimeFormatOptions
   return new Date(iso).toLocaleDateString("es-VE", opts ?? { day: "2-digit", month: "short", year: "numeric" });
 }
 
+/** ID de dispositivo abreviado para tablas (primeros 8 caracteres + …). */
+export function shortDeviceId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
 export function formatRelative(iso: string | null): string {
   if (!iso) return "nunca";
   const now = new Date();

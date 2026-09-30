@@ -39,3 +39,6 @@ Thumbs.db
 !README.md
 !bitacora.md
 !inteligencia.md
+
+# Vercel CLI local (tokens y estado del proyecto)
+.vercel/

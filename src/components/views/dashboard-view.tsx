@@ -137,6 +137,7 @@ export function DashboardView() {
               id: l.id,
               deviceId: l.deviceId,
               type: l.type,
+              status: l.status,
               alias: l.alias,
               clientName: l.clientName,
               clientPhone: l.clientPhone,
@@ -144,8 +145,8 @@ export function DashboardView() {
               expiresAt: l.expiresAt || "",
               daysRemaining,
               isOnline: l.isOnline,
-              appVersion: l.appVersion,
-              platform: l.platform,
+              appVersion: null,
+              platform: null,
             };
           });
         setDemos(activeDemos);
@@ -153,7 +154,17 @@ export function DashboardView() {
         // Generar historial dinámico combinando licencias
         const dynamicActivity: ActivityLog[] = licenses.slice(0, 5).map((l, i) => {
           let action = "LICENSE_GENERATED";
-          let desc = `Licencia ${l.type} configurada para ${l.alias || l.deviceId}`;
+          const typeLabel =
+            (
+              {
+                permanent: "permanente",
+                monthly: "mensual",
+                demo: "demo",
+                registered: "registrada",
+                revoked: "revocada",
+              } as Record<string, string>
+            )[l.type] ?? l.type;
+          let desc = `Licencia ${typeLabel} configurada para ${l.alias || l.deviceId}`;
           if (l.status === "revoked") {
             action = "LICENSE_REVOKED";
             desc = `Licencia revocada para ${l.alias || l.deviceId}`;
@@ -193,7 +204,7 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6">
-      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground">
         {productName(productId)}
       </p>
       {error && (

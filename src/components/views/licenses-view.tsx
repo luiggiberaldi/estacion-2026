@@ -493,6 +493,7 @@ export function LicensesView() {
           type: "demo3",
           expiresAt: new Date(Date.now() + 3 * 86400000).toISOString(),
           status: "active",
+          productId: (lic.productId as ProductId) ?? productId,
         });
         toast({ title: "Demo activada", description: `${lic.alias ?? lic.deviceId} · 3 días` });
         await fetchLicenses(false);
@@ -515,6 +516,7 @@ export function LicensesView() {
           type: "permanent",
           expiresAt: null,
           status: "active",
+          productId: (lic.productId as ProductId) ?? productId,
         });
         toast({
           title: "Convertida a permanente",
@@ -983,9 +985,9 @@ export function LicensesView() {
                 value={statusBadge(detailLic).label}
               />
               <Detail label="Código" value={detailLic.code} mono />
-              <Detail label="Plataforma" value={detailLic.platform.toUpperCase()} />
+              <Detail label="Plataforma" value={detailLic.platform?.toUpperCase() ?? "—"} />
               <Detail label="App versión" value={detailLic.appVersion ?? "—"} />
-              <Detail label="Online" value={detailLic.isOnline ? "Sí" : "No"} />
+              <Detail label="Online" value={detailLic.isOnline ? "En línea" : "Desconectado"} />
               <Detail label="Creada" value={formatDate(detailLic.createdAt)} />
               <Detail label="Activada" value={formatDate(detailLic.activatedAt)} />
               <Detail label="Expira" value={formatDate(detailLic.expiresAt)} />

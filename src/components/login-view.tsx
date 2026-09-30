@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Shield, Lock, Mail, Loader2, Eye, EyeOff } from "lucide-react";
+import { Shield, Lock, Mail, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,18 +11,27 @@ import { Card, CardContent, CardHeader, CardDescription, CardTitle } from "@/com
 export function LoginView() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!/^\d{6}$/.test(pin)) {
+      setError("El PIN debe tener 6 dígitos.");
+      return;
+    }
     setIsLoading(true);
-    const result = await login(email, password);
+    const result = await login(email, pin);
     setIsLoading(false);
-    if (!result.ok) setError(result.error || "Error al iniciar sesión");
+    if (!result.ok) {
+      setError(result.error || "Error al iniciar sesión");
+      return;
+    }
+    // La cookie httpOnly ya quedó seteada por la server action; recarga
+    // completa para que el middleware la valide en la navegación.
+    window.location.href = "/";
   };
 
   return (
@@ -68,29 +77,25 @@ export function LoginView() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Contraseña
+              <Label htmlFor="pin" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                PIN
               </Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="pl-10 pr-10 h-12"
+                  id="pin"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="••••••"
+                  className="pl-10 h-12 tracking-[0.3em] text-center text-lg font-semibold"
                   required
-                  autoComplete="current-password"
+                  autoComplete="one-time-code"
+                  minLength={6}
+                  maxLength={6}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-                >
-                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
               </div>
             </div>
 

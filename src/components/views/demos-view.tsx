@@ -42,13 +42,14 @@ import { PaginationBar } from "@/components/ui/pagination-bar";
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-type FilterKey = "all" | "active" | "expiring" | "expired";
+type FilterKey = "all" | "active" | "expiring" | "expired" | "revoked";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "Todas" },
   { key: "active", label: "Activas" },
   { key: "expiring", label: "Por expirar" },
   { key: "expired", label: "Expiradas" },
+  { key: "revoked", label: "Revocadas" },
 ];
 
 const PLATFORM_ICON: Record<DevicePlatform, typeof Smartphone> = {
@@ -85,6 +86,7 @@ export function DemosView() {
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [confirmRevoke, setConfirmRevoke] = useState<Demo | null>(null);
+  const [confirmConvert, setConfirmConvert] = useState<Demo | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   const fetchDemos = async (showLoading = true) => {
@@ -111,8 +113,14 @@ export function DemosView() {
     const now = Date.now();
     return demos
       .filter((d) => {
-        const isExpired = d.expiresAt ? new Date(d.expiresAt).getTime() < now : false;
+        const isRevoked = d.status === "revoked";
+        const isExpired =
+          !isRevoked && d.expiresAt
+            ? new Date(d.expiresAt).getTime() < now
+            : false;
         if (filter === "all") return true;
+        if (filter === "revoked") return isRevoked;
+        if (isRevoked) return false;
         if (filter === "active") return !isExpired;
         if (filter === "expiring") return !isExpired && d.daysRemaining <= 3;
         if (filter === "expired") return isExpired;
@@ -141,14 +149,16 @@ export function DemosView() {
 
   const counts = useMemo(() => {
     const now = Date.now();
+    const live = demos.filter((d) => d.status !== "revoked");
     return {
       all: demos.length,
-      active: demos.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() >= now : true)).length,
-      expiring: demos.filter((d) => {
+      active: live.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() >= now : true)).length,
+      expiring: live.filter((d) => {
         const isExp = d.expiresAt ? new Date(d.expiresAt).getTime() < now : false;
         return !isExp && d.daysRemaining <= 3;
       }).length,
-      expired: demos.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() < now : false)).length,
+      expired: live.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() < now : false)).length,
+      revoked: demos.filter((d) => d.status === "revoked").length,
     };
   }, [demos]);
 
@@ -294,11 +304,14 @@ export function DemosView() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedDemos.map((demo) => {
-            const PlatformIcon = PLATFORM_ICON[demo.platform];
+            const PlatformIcon = demo.platform ? PLATFORM_ICON[demo.platform] : Smartphone;
+            const isRevoked = demo.status === "revoked";
             // Duración real de la demo (demo7 = 7 días, demo3 = 3 días)
             const demoDurationDays = demo.type === "demo3" ? 3 : 7;
             const pct = Math.max(0, Math.min(100, (demo.daysRemaining / demoDurationDays) * 100));
-            const ub = urgencyBadge(demo.daysRemaining);
+            const ub = isRevoked
+              ? { label: "Revocada", className: "bg-secondary text-muted-foreground border-transparent" }
+              : urgencyBadge(demo.daysRemaining);
             const isExpired = demo.daysRemaining <= 0;
             const isPending = pendingId === demo.id;
             return (
@@ -323,24 +336,26 @@ export function DemosView() {
                     <Badge className={cn("shrink-0", ub.className)}>{ub.label}</Badge>
                   </div>
 
-                  {/* Barra de progreso */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <span>Tiempo restante</span>
-                      <span className="tabular-nums">{Math.round(pct)}%</span>
+                  {/* Barra de progreso (sin sentido en revocadas) */}
+                  {!isRevoked && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <span>Tiempo restante</span>
+                        <span className="tabular-nums">{Math.round(pct)}%</span>
+                      </div>
+                      <Progress
+                        value={pct}
+                        className={cn("h-2", progressTone(demo.daysRemaining))}
+                      />
                     </div>
-                    <Progress
-                      value={pct}
-                      className={cn("h-2", progressTone(demo.daysRemaining))}
-                    />
-                  </div>
+                  )}
 
                   {/* Meta */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarClock className="size-3.5 shrink-0" />
                       <span className="truncate">
-                        Expira {formatDate(demo.expiresAt, { day: "2-digit", month: "short" })}
+                        Expira {formatDate(demo.expiresAt, { day: "2-digit", month: "short", year: "numeric" })}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-muted-foreground sm:justify-end">
@@ -351,7 +366,7 @@ export function DemosView() {
 
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <PlatformIcon className="size-3" />
-                    <span className="uppercase">{demo.platform}</span>
+                    <span className="uppercase">{demo.platform ?? "—"}</span>
                     <span className="text-muted-foreground/60">·</span>
                     <span>v{demo.appVersion ?? "—"}</span>
                     <span className="text-muted-foreground/60">·</span>
@@ -373,7 +388,8 @@ export function DemosView() {
                       variant="outline"
                       className="flex-1 h-8 text-xs"
                       onClick={() => handleExtend(demo)}
-                      disabled={isPending || isExpired}
+                      disabled={isPending || isExpired || isRevoked}
+                      title={isRevoked ? "La demo está revocada" : undefined}
                     >
                       {isPending ? (
                         <Loader2 className="size-3.5 animate-spin" />
@@ -386,7 +402,7 @@ export function DemosView() {
                       size="sm"
                       variant="secondary"
                       className="flex-1 h-8 text-xs"
-                      onClick={() => handleConvert(demo)}
+                      onClick={() => (isRevoked ? setConfirmConvert(demo) : handleConvert(demo))}
                       disabled={isPending}
                     >
                       <InfinityIcon className="size-3.5" />
@@ -398,6 +414,8 @@ export function DemosView() {
                       className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       onClick={() => setConfirmRevoke(demo)}
                       aria-label="Revocar demo"
+                      disabled={isRevoked}
+                      title={isRevoked ? "La demo ya está revocada" : undefined}
                     >
                       <Ban className="size-3.5" />
                     </Button>
@@ -442,6 +460,34 @@ export function DemosView() {
               className="bg-destructive text-white hover:bg-destructive/90"
             >
               Revocar demo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Confirmación convertir revocada a permanente */}
+      <AlertDialog
+        open={!!confirmConvert}
+        onOpenChange={(o) => !o && setConfirmConvert(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Reactivar como permanente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta demo está revocada. Al convertirla, el dispositivo{" "}
+              {confirmConvert?.alias ?? confirmConvert?.deviceId} quedará activo
+              con licencia permanente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const d = confirmConvert;
+                setConfirmConvert(null);
+                if (d) handleConvert(d);
+              }}
+            >
+              Reactivar como permanente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

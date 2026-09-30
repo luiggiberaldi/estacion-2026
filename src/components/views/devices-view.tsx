@@ -16,6 +16,7 @@ import {
   Building2,
   Send,
   RotateCw,
+  Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,10 +49,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { cn, formatRelative, formatDate } from "@/lib/utils";
+import { cn, formatRelative, formatDate, shortDeviceId } from "@/lib/utils";
 import { getDevices, updateDeviceAlias, requestBackup, sendRemoteReloadCommand } from "@/lib/actions";
 
 import type { Device, DevicePlatform } from "@/lib/types";
+import { productName } from "@/lib/products";
+import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -69,12 +72,20 @@ const PLATFORM_META: Record<
   desktop: { label: "Desktop", icon: MonitorSmartphone, className: "bg-secondary text-secondary-foreground border-transparent" },
 };
 
+/** Plataforma desconocida: la BD no la registra, no se fabrica. */
+const PLATFORM_UNKNOWN = {
+  label: "—",
+  icon: Smartphone,
+  className: "bg-secondary text-muted-foreground border-transparent",
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Vista principal
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function DevicesView() {
   const { toast } = useToast();
+  const { productId } = useProduct();
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [detail, setDetail] = useState<Device | null>(null);
@@ -126,6 +137,19 @@ export function DevicesView() {
   function openAliasDialog(d: Device) {
     setAliasTarget(d);
     setAliasValue(d.alias ?? "");
+  }
+
+  async function handleCopyDeviceId(deviceId: string) {
+    try {
+      await navigator.clipboard.writeText(deviceId);
+      toast({ title: "ID copiado", description: deviceId });
+    } catch {
+      toast({
+        title: "No se pudo copiar",
+        description: "El portapapeles no está disponible.",
+        variant: "destructive",
+      });
+    }
   }
 
   async function handleSaveAlias() {
@@ -185,12 +209,14 @@ export function DevicesView() {
 
   async function handleRemoteReload(d?: Device) {
     try {
-      const count = await sendRemoteReloadCommand(d?.deviceId);
+      // Con dispositivo: va directo al device_id. Sin dispositivo ("todos"):
+      // scoped al producto visible, nada de default silencioso a Lite.
+      const count = await sendRemoteReloadCommand(productId, d?.deviceId);
       toast({
         title: "Comando enviado",
         description: d
           ? `Comando de recarga insertado para ${d.alias ?? d.deviceId}. El POS lo procesará al sincronizar comandos remotos.`
-          : `Comando insertado para ${count} cuenta(s) activa(s). El POS lo procesará al sincronizar comandos remotos.`,
+          : `Comando insertado para ${count} cuenta(s) activa(s) de ${productName(productId)}. El POS lo procesará al sincronizar comandos remotos.`,
       });
     } catch (err: any) {
       toast({
@@ -226,7 +252,7 @@ export function DevicesView() {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="pl-4 min-w-[140px]">Dispositivo</TableHead>
+              <TableHead className="pl-4 min-w-[110px]">Dispositivo</TableHead>
               <TableHead className="min-w-[140px]">Alias</TableHead>
               <TableHead className="min-w-[150px]">Negocio</TableHead>
               <TableHead>Plataforma</TableHead>
@@ -234,7 +260,9 @@ export function DevicesView() {
               <TableHead className="min-w-[110px]">Registrado</TableHead>
               <TableHead className="min-w-[120px]">Última conexión</TableHead>
               <TableHead className="text-center">Online</TableHead>
-              <TableHead className="text-right pr-4">Acciones</TableHead>
+              <TableHead className="text-right pr-4 sticky right-0 bg-card border-l border-border/40 z-10">
+                Acciones
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -266,13 +294,24 @@ export function DevicesView() {
               </TableRow>
             ) : (
               paginatedDevices.map((d) => {
-                const pm = PLATFORM_META[d.platform];
+                const pm = d.platform ? PLATFORM_META[d.platform] : PLATFORM_UNKNOWN;
                 const PmIcon = pm.icon;
                 return (
                   <TableRow key={d.id} className="group">
-                    <TableCell className="pl-4 font-mono text-xs text-foreground">
-                      {d.deviceId}
-                      
+                    <TableCell className="pl-4 font-mono text-xs text-foreground whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span title={d.deviceId}>{shortDeviceId(d.deviceId)}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6 opacity-60 hover:opacity-100"
+                          onClick={() => handleCopyDeviceId(d.deviceId)}
+                          aria-label="Copiar ID del dispositivo"
+                          title="Copiar ID completo"
+                        >
+                          <Copy className="size-3" />
+                        </Button>
+                      </span>
                     </TableCell>
                     <TableCell className="text-sm text-foreground">
                       {d.alias ?? (
@@ -323,7 +362,7 @@ export function DevicesView() {
                         </span>
                       </span>
                     </TableCell>
-                    <TableCell className="text-right pr-4">
+                    <TableCell className="text-right pr-4 sticky right-0 bg-card border-l border-border/40">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -404,7 +443,7 @@ export function DevicesView() {
                 <Detail label="Teléfono" value={detail.clientPhone ?? "—"} mono />
                 <Detail
                   label="Plataforma"
-                  value={PLATFORM_META[detail.platform].label}
+                  value={detail.platform ? PLATFORM_META[detail.platform].label : "—"}
                 />
                 <Detail label="App versión" value={`v${detail.appVersion ?? "—"}`} mono />
                 <Detail label="Registrado" value={formatDate(detail.registeredAt)} />

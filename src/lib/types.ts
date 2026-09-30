@@ -25,16 +25,19 @@ export interface License {
   lastSeenAt: string | null;
   activatedAt: string | null;
   appVersion: string | null;
-  platform: DevicePlatform;
+  /** Plataforma real del dispositivo. Null = desconocida (no se fabrica). */
+  platform: DevicePlatform | null;
   isOnline: boolean;
   notes: string | null;
 }
 
-/** Demo activo (derivado de licenses con type=demo7|demo3). */
+/** Demo (derivado de licenses con type=demo7|demo3). */
 export interface Demo {
   id: string;
   deviceId: string;
   type: LicenseType;
+  /** Estado real: una demo revocada (is_active=false) llega como "revoked". */
+  status: LicenseStatus;
   alias: string | null;
   clientName: string | null;
   clientPhone: string | null;
@@ -44,7 +47,8 @@ export interface Demo {
   daysRemaining: number;
   isOnline: boolean;
   appVersion: string | null;
-  platform: DevicePlatform;
+  /** Null = desconocida (no se fabrica). */
+  platform: DevicePlatform | null;
 }
 
 /** Backup de un dispositivo (cloud_backups). */
@@ -92,7 +96,8 @@ export interface Device {
   clientPhone: string | null;
   email: string | null;
   marketingEmail?: string | null;
-  platform: DevicePlatform;
+  /** Plataforma real del dispositivo. Null = desconocida (no se fabrica). */
+  platform: DevicePlatform | null;
   appVersion: string | null;
   registeredAt: string;
   lastSeenAt: string | null;
