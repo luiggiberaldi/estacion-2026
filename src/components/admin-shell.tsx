@@ -14,6 +14,8 @@ import {
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useProduct } from "@/lib/product-context";
+import { PRODUCTS, type ProductId } from "@/lib/products";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +51,7 @@ interface AdminShellProps {
 
 export function AdminShell({ activeView, onViewChange, children }: AdminShellProps) {
   const { user, logout } = useAuth();
+  const { productId, setProductId } = useProduct();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const activeItem = NAV_ITEMS.find((n) => n.id === activeView);
 
@@ -71,6 +74,38 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
               <span className="font-display text-base text-sidebar-foreground">Estación Maestra</span>
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Bodega v1.2</span>
             </div>
+          </div>
+
+          {/* Selector de producto: Lite / Pro */}
+          <div className="border-b border-sidebar-border px-3 py-3">
+            <div
+              role="tablist"
+              aria-label="Producto"
+              className="grid grid-cols-2 gap-1 rounded-lg bg-sidebar-accent/60 p-1"
+            >
+              {PRODUCTS.map((p) => {
+                const isActive = productId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setProductId(p.id as ProductId)}
+                    className={cn(
+                      "rounded-md px-2 py-1.5 text-xs font-semibold transition-colors",
+                      isActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                        : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                    )}
+                  >
+                    {p.short}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 px-1 text-[10px] leading-tight text-muted-foreground">
+              {PRODUCTS.find((p) => p.id === productId)?.name}
+            </p>
           </div>
 
           {/* Nav */}

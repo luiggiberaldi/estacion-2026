@@ -11,6 +11,8 @@ export type PaymentMethod = "pago_movil" | "transferencia" | "zelle" | "efectivo
 export interface License {
   id: string;
   deviceId: string;
+  /** Discriminador comercial: 'bodega' (Lite) | 'pro' (Pro). */
+  productId: string;
   alias: string | null;
   clientName: string | null;
   clientPhone: string | null;

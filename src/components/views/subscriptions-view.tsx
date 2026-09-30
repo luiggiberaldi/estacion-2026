@@ -51,6 +51,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, formatCurrency, formatDate, formatRelative } from "@/lib/utils";
 
 import { getLicenses, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
+import { useProduct } from "@/lib/product-context";
+import { PRODUCT_PRICES } from "@/lib/products";
 import type { Subscription, SubscriptionStatus, PaymentMethod } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -86,6 +88,7 @@ const PAYMENT_META: Record<
 
 export function SubscriptionsView() {
   const { toast } = useToast();
+  const { productId } = useProduct();
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState<Subscription | null>(null);
@@ -94,7 +97,7 @@ export function SubscriptionsView() {
   const fetchSubscriptions = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const licenses = await getLicenses();
+      const licenses = await getLicenses(productId);
       const monthlySubs = licenses
         .filter((l) => l.type === "monthly" && l.status !== "revoked")
         .map((l, i) => {
@@ -116,7 +119,7 @@ export function SubscriptionsView() {
             clientName: l.clientName,
             clientPhone: l.clientPhone,
             status: status as Subscription["status"],
-            amountUsd: 15,
+            amountUsd: PRODUCT_PRICES[productId].monthly,
             paymentMethod: "pago_movil" as Subscription["paymentMethod"],
             startDate: l.createdAt,
             dueDate,
@@ -140,7 +143,7 @@ export function SubscriptionsView() {
 
   useEffect(() => {
     fetchSubscriptions();
-  }, []);
+  }, [productId]);
 
   const {
     currentPage,
@@ -182,6 +185,7 @@ export function SubscriptionsView() {
         type: "monthly",
         expiresAt: newDue,
         status: "active",
+        productId,
       });
 
       toast({
@@ -215,6 +219,7 @@ export function SubscriptionsView() {
         type: "monthly",
         expiresAt: newDue,
         status: "active",
+        productId,
       });
 
       toast({
@@ -237,7 +242,7 @@ export function SubscriptionsView() {
     if (!confirmCancel) return;
     setIsLoading(true);
     try {
-      await revokeLicense(confirmCancel.deviceId);
+      await revokeLicense(confirmCancel.deviceId, productId);
       toast({
         title: "Suscripción cancelada",
         description: confirmCancel.alias ?? confirmCancel.deviceId,

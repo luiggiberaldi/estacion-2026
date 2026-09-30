@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { ProductProvider } from "@/lib/product-context";
 import { AdminShell, type AdminView } from "@/components/admin-shell";
 import { LoginView } from "@/components/login-view";
 import { DashboardView } from "@/components/views/dashboard-view";
@@ -31,14 +32,16 @@ function AdminAppInternal() {
   // }
 
   return (
-    <AdminShell activeView={activeView} onViewChange={setActiveView}>
-      {activeView === "dashboard" && <DashboardView />}
-      {activeView === "licenses" && <LicensesView />}
-      {activeView === "demos" && <DemosView />}
-      {activeView === "backups" && <BackupsView />}
-      {activeView === "subscriptions" && <SubscriptionsView />}
-      {activeView === "devices" && <DevicesView />}
-    </AdminShell>
+    <ProductProvider>
+      <AdminShell activeView={activeView} onViewChange={setActiveView}>
+        {activeView === "dashboard" && <DashboardView />}
+        {activeView === "licenses" && <LicensesView />}
+        {activeView === "demos" && <DemosView />}
+        {activeView === "backups" && <BackupsView />}
+        {activeView === "subscriptions" && <SubscriptionsView />}
+        {activeView === "devices" && <DevicesView />}
+      </AdminShell>
+    </ProductProvider>
   );
 }
 

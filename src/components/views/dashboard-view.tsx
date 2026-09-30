@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency, formatRelative, isDemoType } from "@/lib/utils";
 import { getDashboardData } from "@/lib/actions";
+import { useProduct } from "@/lib/product-context";
+import { productName } from "@/lib/products";
 import type { ActivityLog, Demo } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,12 +118,13 @@ export function DashboardView() {
   const [activity, setActivity] = useState<ActivityLog[]>([]);
   const [demos, setDemos] = useState<Demo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { productId } = useProduct();
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setError(null);
-        const { stats: statsData, licenses } = await getDashboardData();
+        const { stats: statsData, licenses } = await getDashboardData(productId);
         setStats(statsData);
         // Derivar demos (incluye demo3 y demo7; sin fechas fabricadas)
         const activeDemos = licenses
@@ -182,7 +185,7 @@ export function DashboardView() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [productId]);
 
   const expiringDemos = demos
     .filter((d) => d.daysRemaining < 7)
@@ -190,6 +193,9 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6">
+      <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        {productName(productId)}
+      </p>
       {error && (
         <div className="bg-destructive/15 border-l-4 border-destructive p-4 rounded-r-xl text-sm text-destructive flex items-center gap-2 animate-in fade-in duration-300">
           <AlertCircle className="size-5 shrink-0" />

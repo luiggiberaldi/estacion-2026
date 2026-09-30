@@ -71,6 +71,8 @@ import { cn, formatRelative, formatDate } from "@/lib/utils";
 
 import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense } from "@/lib/actions";
 import type { License, LicenseType } from "@/lib/types";
+import { useProduct } from "@/lib/product-context";
+import { PRODUCTS, productName, type ProductId } from "@/lib/products";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -144,6 +146,7 @@ const TYPE_BADGE: Record<LicenseType, string> = {
 
 export function LicensesView() {
   const { toast } = useToast();
+  const { productId } = useProduct();
   const [licenses, setLicenses] = useState<License[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("permanent");
@@ -163,6 +166,7 @@ export function LicensesView() {
   // Form de generación
   const [formDeviceId, setFormDeviceId] = useState("");
   const [formType, setFormType] = useState<LicenseType>("permanent");
+  const [formProduct, setFormProduct] = useState<ProductId>("bodega");
   const [formDays, setFormDays] = useState(3);
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
@@ -294,7 +298,7 @@ export function LicensesView() {
   const fetchLicenses = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const data = await getLicenses();
+      const data = await getLicenses(productId);
       setLicenses(data);
     } catch (err: any) {
       toast({
@@ -309,7 +313,7 @@ export function LicensesView() {
 
   useEffect(() => {
     fetchLicenses();
-  }, []);
+  }, [productId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -407,11 +411,12 @@ export function LicensesView() {
         expiresAt,
         alias: formAlias.trim(),
         clientName: formClient.trim(),
+        productId: formProduct,
       });
 
       toast({
         title: "Licencia generada",
-        description: `${TYPE_LABEL[formType]} para ${formDeviceId.trim().toUpperCase()}`,
+        description: `${TYPE_LABEL[formType]} ${productName(formProduct)} para ${formDeviceId.trim().toUpperCase()}`,
       });
       setGenerateOpen(false);
       setFormDeviceId("");
@@ -447,6 +452,7 @@ export function LicensesView() {
         type: newLicType,
         expiresAt,
         status: "active",
+        productId: (changeTypeLic.productId as ProductId) ?? productId,
       });
 
       toast({
@@ -533,14 +539,14 @@ export function LicensesView() {
     setIsLoading(true);
     try {
       if (action === "revoke") {
-        await revokeLicense(lic.deviceId);
+        await revokeLicense(lic.deviceId, (lic.productId as ProductId) ?? productId);
         toast({
           title: "Licencia revocada",
           description: lic.alias ?? lic.deviceId,
           variant: "destructive",
         });
       } else {
-        await deleteLicense(lic.deviceId);
+        await deleteLicense(lic.deviceId, (lic.productId as ProductId) ?? productId);
         toast({
           title: "Dispositivo eliminado",
           description: lic.alias ?? lic.deviceId,
@@ -569,13 +575,13 @@ export function LicensesView() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por dispositivo, alias o cliente..."
+            placeholder={`Buscar en ${productName(productId)} por dispositivo, alias o cliente...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9 bg-card"
           />
         </div>
-        <Button onClick={() => setGenerateOpen(true)} className="sm:ml-auto">
+        <Button onClick={() => { setFormProduct(productId); setGenerateOpen(true); }} className="sm:ml-auto">
           <Plus className="size-4" /> Generar licencia
         </Button>
       </div>
@@ -887,6 +893,23 @@ export function LicensesView() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Producto
+                </Label>
+                <Select value={formProduct} onValueChange={(v) => setFormProduct(v as ProductId)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRODUCTS.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                   Tipo de licencia
                 </Label>
                 <Select value={formType} onValueChange={(v) => setFormType(v as LicenseType)}>
@@ -954,6 +977,7 @@ export function LicensesView() {
               <Detail label="Teléfono" value={detailLic.clientPhone ?? "—"} />
               <Detail label="Email de Marketing" value={detailLic.marketingEmail ?? "—"} />
               <Detail label="Tipo" value={TYPE_LABEL[detailLic.type]} />
+              <Detail label="Producto" value={productName((detailLic.productId as ProductId) ?? "bodega")} />
               <Detail
                 label="Estado"
                 value={statusBadge(detailLic).label}

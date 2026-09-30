@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, formatDate, formatRelative } from "@/lib/utils";
 
 import { getDemos, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
+import { useProduct } from "@/lib/product-context";
 import type { Demo, DevicePlatform } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -79,6 +80,7 @@ function urgencyBadge(days: number): { label: string; className: string } {
 
 export function DemosView() {
   const { toast } = useToast();
+  const { productId } = useProduct();
   const [demos, setDemos] = useState<Demo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -88,7 +90,7 @@ export function DemosView() {
   const fetchDemos = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const data = await getDemos();
+      const data = await getDemos(productId);
       setDemos(data);
     } catch (err: any) {
       toast({
@@ -103,7 +105,7 @@ export function DemosView() {
 
   useEffect(() => {
     fetchDemos();
-  }, []);
+  }, [productId]);
 
   const filtered = useMemo(() => {
     const now = Date.now();
@@ -165,6 +167,7 @@ export function DemosView() {
         type: "demo7",
         expiresAt: newExpiresAt,
         status: "active",
+        productId,
       });
 
       toast({
@@ -191,6 +194,7 @@ export function DemosView() {
         type: "permanent",
         expiresAt: null,
         status: "active",
+        productId,
       });
 
       toast({
@@ -213,7 +217,7 @@ export function DemosView() {
     if (!confirmRevoke) return;
     setPendingId(confirmRevoke.id);
     try {
-      await revokeLicense(confirmRevoke.deviceId);
+      await revokeLicense(confirmRevoke.deviceId, productId);
       toast({
         title: "Demo revocada",
         description: confirmRevoke.alias ?? confirmRevoke.deviceId,

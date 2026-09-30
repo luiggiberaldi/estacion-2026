@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "./supabase";
+import { PRODUCT_PRICES, type ProductId } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
 import { unzipSync } from "node:zlib";
@@ -53,13 +54,14 @@ function parseBusinessName(raw: string | null | undefined): { businessName: stri
 // LICENCIAS (CRUD sobre public.licenses y public.cloud_licenses)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getLicenses(): Promise<License[]> {
+export async function getLicenses(productId: ProductId = "bodega"): Promise<License[]> {
   const admin = getSupabaseAdmin();
 
-  // 1. Obtener datos de la tabla autoritativa de validación (licenses)
+  // 1. Obtener datos de la tabla autoritativa de validación (licenses), scoped por producto
   const { data: dbLicenses, error: licErr } = await admin
     .from("licenses")
     .select("*")
+    .eq("product_id", productId)
     .order("created_at", { ascending: false });
 
   if (licErr) throw new Error(`Error al obtener licencias: ${licErr.message}`);
@@ -87,6 +89,7 @@ export async function getLicenses(): Promise<License[]> {
     return {
       id: l.id,
       deviceId: l.device_id,
+      productId: l.product_id ?? productId,
       alias: businessName,
       clientName: structuredClientCode,
       clientPhone: cl.phone || null,
@@ -106,8 +109,8 @@ export async function getLicenses(): Promise<License[]> {
   });
 }
 
-export async function getDemos(): Promise<Demo[]> {
-  const licenses = await getLicenses();
+export async function getDemos(productId: ProductId = "bodega"): Promise<Demo[]> {
+  const licenses = await getLicenses(productId);
   const now = new Date();
   return licenses
     .filter((l) => isDemoType(l.type))
@@ -143,8 +146,11 @@ export async function createOrUpdateLicense(licenseData: {
   clientPhone?: string;
   notes?: string;
   status?: LicenseStatus;
+  /** Producto comercial. Default 'bodega' (Lite) por compatibilidad. */
+  productId?: ProductId;
 }): Promise<void> {
   const admin = getSupabaseAdmin();
+  const productId: ProductId = licenseData.productId ?? "bodega";
   const deviceId = licenseData.deviceId.replace(/\s+/g, '').toUpperCase();
   const now = new Date().toISOString();
 
@@ -161,7 +167,7 @@ export async function createOrUpdateLicense(licenseData: {
     .from("licenses")
     .select("id")
     .eq("device_id", deviceId)
-    .eq("product_id", "bodega")
+    .eq("product_id", productId)
     .maybeSingle();
 
   if (fetchLicErr) throw new Error(`Error al buscar licencia existente: ${fetchLicErr.message}`);
@@ -184,7 +190,7 @@ export async function createOrUpdateLicense(licenseData: {
       .from("licenses")
       .insert({
         device_id: deviceId,
-        product_id: "bodega",
+        product_id: productId,
         type: licenseData.type,
         code: code,
         is_active: isActive,
@@ -254,7 +260,7 @@ export async function createOrUpdateLicense(licenseData: {
   if (clErr) throw new Error(`Error al guardar en cloud_licenses: ${clErr.message}`);
 }
 
-export async function revokeLicense(deviceId: string): Promise<void> {
+export async function revokeLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -263,7 +269,7 @@ export async function revokeLicense(deviceId: string): Promise<void> {
     .from("licenses")
     .update({ is_active: false, updated_at: now })
     .eq("device_id", deviceId)
-    .eq("product_id", "bodega");
+    .eq("product_id", productId);
 
   if (licErr) throw new Error(`Error al revocar en licenses: ${licErr.message}`);
 
@@ -275,7 +281,7 @@ export async function revokeLicense(deviceId: string): Promise<void> {
   if (clErr) throw new Error(`Error al revocar en cloud_licenses: ${clErr.message}`);
 }
 
-export async function deleteLicense(deviceId: string): Promise<void> {
+export async function deleteLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
   const admin = getSupabaseAdmin();
 
   // Scoped por producto para no eliminar licencias de otros productos del mismo dispositivo
@@ -283,7 +289,7 @@ export async function deleteLicense(deviceId: string): Promise<void> {
     .from("licenses")
     .delete()
     .eq("device_id", deviceId)
-    .eq("product_id", "bodega");
+    .eq("product_id", productId);
 
   if (licErr) throw new Error(`Error al eliminar de licenses: ${licErr.message}`);
 
@@ -533,10 +539,14 @@ export async function updateDeviceAlias(deviceId: string, alias: string): Promis
 // ESTADÍSTICAS DEL DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(licenses?: License[], backups?: Backup[]): Promise<DashboardStats> {
+export async function getDashboardStats(
+  licenses?: License[],
+  backups?: Backup[],
+  productId: ProductId = "bodega"
+): Promise<DashboardStats> {
   // Permite reutilizar datos ya cargados por getDashboardData() sin refetch
   if (!licenses || !backups) {
-    licenses = await getLicenses();
+    licenses = await getLicenses(productId);
     backups = await getBackups();
   }
 
@@ -559,8 +569,8 @@ export async function getDashboardStats(licenses?: License[], backups?: Backup[]
     expiringIn7Days: activeLicenses.filter(
       (l) => l.expiresAt && new Date(l.expiresAt) > now && new Date(l.expiresAt) <= in7Days
     ).length,
-    totalRevenue: permanentCount * 80 + monthlyCount * 15, // Estimado de ingresos
-    monthlyRevenue: monthlyCount * 15,
+    totalRevenue: permanentCount * PRODUCT_PRICES[productId].permanent + monthlyCount * PRODUCT_PRICES[productId].monthly, // Estimado de ingresos según precios del producto
+    monthlyRevenue: monthlyCount * PRODUCT_PRICES[productId].monthly,
     pendingPayments: licenses.filter(l => l.status === "expired" && l.type === "monthly").length,
     activeBackups: backups.length,
   };
@@ -571,8 +581,8 @@ export async function getDashboardStats(licenses?: License[], backups?: Backup[]
  * El dashboard necesita licencias y stats; getDashboardStats() reutiliza
  * las licencias aquí obtenidas en vez de volver a consultarlas.
  */
-export async function getDashboardData(): Promise<{ stats: DashboardStats; licenses: License[] }> {
-  const [licenses, backups] = await Promise.all([getLicenses(), getBackups()]);
-  const stats = await getDashboardStats(licenses, backups);
+export async function getDashboardData(productId: ProductId = "bodega"): Promise<{ stats: DashboardStats; licenses: License[] }> {
+  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
+  const stats = await getDashboardStats(licenses, backups, productId);
   return { stats, licenses };
 }
