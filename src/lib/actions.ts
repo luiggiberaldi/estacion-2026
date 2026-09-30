@@ -427,6 +427,43 @@ export async function getPendingBackupRequests(): Promise<string[]> {
   return (data || []).map((r: any) => r.device_id);
 }
 
+export interface FailedBackupRequest {
+  deviceId: string;
+  error: string | null;
+  createdAt: string;
+}
+
+/**
+ * Solicitudes de respaldo que el equipo marcó como fallidas (con motivo).
+ * Tolerante a que la columna `error` aún no exista (migración pendiente):
+ * en ese caso devuelve las filas sin motivo.
+ */
+export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("backup_requests")
+    .select("device_id, created_at, error")
+    .eq("status", "failed");
+
+  if (!error) {
+    return (data || []).map((r: any) => ({
+      deviceId: r.device_id,
+      error: r.error ?? null,
+      createdAt: r.created_at,
+    }));
+  }
+  const retry = await admin
+    .from("backup_requests")
+    .select("device_id, created_at")
+    .eq("status", "failed");
+  if (retry.error) return [];
+  return (retry.data || []).map((r: any) => ({
+    deviceId: r.device_id,
+    error: null,
+    createdAt: r.created_at,
+  }));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMANDO REMOTO DE RECARGA (tabla supervisor_commands, mecanismo autorizado del POS)
 // ─────────────────────────────────────────────────────────────────────────────

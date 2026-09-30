@@ -63,6 +63,7 @@ import {
   requestBackup,
   requestAllBackups,
   getPendingBackupRequests,
+  getFailedBackupRequests,
   getLicenses,
   sendRemoteReloadCommand,
 } from "@/lib/actions";
@@ -112,16 +113,21 @@ export function BackupsView() {
   const [selectedDeviceForRequest, setSelectedDeviceForRequest] = useState<string>("all");
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [pendingDeviceIds, setPendingDeviceIds] = useState<string[]>([]);
+  const [failedRequests, setFailedRequests] = useState<
+    Array<{ deviceId: string; error: string | null }>
+  >([]);
 
   const fetchBackups = async () => {
     setIsLoading(true);
     try {
-      const [backupsData, pendingIds] = await Promise.all([
+      const [backupsData, pendingIds, failed] = await Promise.all([
         getBackups(),
         getPendingBackupRequests(),
+        getFailedBackupRequests(),
       ]);
       setBackups(backupsData);
       setPendingDeviceIds(pendingIds);
+      setFailedRequests(failed);
     } catch (err: any) {
       toast({
         title: "Error al obtener respaldos",
@@ -426,6 +432,7 @@ export function BackupsView() {
                 const sm = STATUS_META[bkp.status];
                 const StatusIcon = sm.icon;
                 const hasPendingRequest = pendingDeviceIds.includes(bkp.deviceId);
+                const failedReq = failedRequests.find((f) => f.deviceId === bkp.deviceId);
                 return (
                   <TableRow key={bkp.id} className="group">
                     <TableCell className="pl-4 font-mono text-xs text-foreground">
@@ -437,6 +444,15 @@ export function BackupsView() {
                             className="h-4 px-1 text-[9px] uppercase tracking-wide border-warning/40 text-warning bg-warning/10 shrink-0"
                           >
                             Solicitado
+                          </Badge>
+                        )}
+                        {failedReq && (
+                          <Badge
+                            variant="destructive"
+                            className="h-4 px-1 text-[9px] uppercase tracking-wide shrink-0"
+                            title={failedReq.error || "El equipo no pudo completar el respaldo"}
+                          >
+                            Fallido
                           </Badge>
                         )}
                       </div>
