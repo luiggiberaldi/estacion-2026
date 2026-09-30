@@ -224,6 +224,10 @@ asistente no puede rotarlos (viven en sus cuentas).
 - El redeploy vacío se necesitó porque el primer push a main no movía el
   dominio (el edge seguía sirviendo el deploy manual anterior); con
   `vercel --prod` el dominio tomó el código nuevo de inmediato.
+- Prueba de login real en producción (navegador, 2026-09-30): email + PIN →
+  entra al panel sin errores; dashboard muestra Lite seleccionado, sidebar
+  completo y KPIs (Total licencias 99, Demos activas 0, Ingreso histórico
+  $320.00). Sesión activa como luiggiberaldi94@gmail.com.
 
 ---
 
