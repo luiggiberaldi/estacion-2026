@@ -3,6 +3,7 @@ import { Instrument_Serif, Work_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { SWDeregister } from "@/components/sw-deregister";
+import { VisitTracker } from "@/components/visit-tracker";
 
 const instrumentSerif = Instrument_Serif({
   variable: "--font-instrument-serif",
@@ -53,6 +54,7 @@ export default function RootLayout({
         {children}
         <Toaster />
         <SWDeregister />
+        <VisitTracker />
       </body>
     </html>
   );

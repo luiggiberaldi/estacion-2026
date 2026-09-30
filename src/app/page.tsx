@@ -12,6 +12,8 @@ import { DemosView } from "@/components/views/demos-view";
 import { BackupsView } from "@/components/views/backups-view";
 import { SubscriptionsView } from "@/components/views/subscriptions-view";
 import { DevicesView } from "@/components/views/devices-view";
+import { NotificationsView } from "@/components/views/notifications-view";
+import { VisitsView } from "@/components/views/visits-view";
 import { Loader2 } from "lucide-react";
 
 function AdminAppInternal() {
@@ -41,6 +43,8 @@ function AdminAppInternal() {
         {activeView === "backups" && <BackupsView />}
         {activeView === "subscriptions" && <SubscriptionsView />}
         {activeView === "devices" && <DevicesView />}
+        {activeView === "notifications" && <NotificationsView />}
+        {activeView === "visits" && <VisitsView />}
       </AdminShell>
     </ProductProvider>
   );

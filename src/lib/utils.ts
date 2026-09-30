@@ -31,6 +31,20 @@ export function shortDeviceId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
+/** Dispositivo legible a partir del user-agent (parseo simple, sin librerías). */
+export function parseDevice(ua: string | null): string {
+  if (!ua) return "—";
+  const u = ua.toLowerCase();
+  if (u.includes("iphone")) return "iPhone";
+  if (u.includes("ipad")) return "iPad";
+  if (u.includes("android")) return "Android";
+  if (u.includes("windows")) return "Windows";
+  if (u.includes("macintosh") || u.includes("mac os")) return "Mac";
+  if (u.includes("linux")) return "Linux";
+  if (u.includes("mobile")) return "Móvil";
+  return "Escritorio";
+}
+
 export function formatRelative(iso: string | null): string {
   if (!iso) return "nunca";
   const now = new Date();

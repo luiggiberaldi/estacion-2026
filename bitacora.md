@@ -267,3 +267,23 @@ Lite original (el que corre en campo) debe recibir el mismo fix de
 - Mensaje de error cambiado de "Credenciales incorrectas" a "PIN incorrecto".
 
 **Verificación:** `npx tsc --noEmit` limpio, ESLint 0 errores, `npm run build` verde. Smoke test local con `next start`: `/login` sirve solo `id="pin"` (sin `id="email"`); `/` sin sesión sigue 307 a `/login`; `/api/backup/complete` sin secreto sigue 401.
+
+## 2026-09-30 — Registro de visitas + centro de notificaciones
+
+**Pidió luigi:** que toda persona que abra el link quede registrada, y notificaciones de nuevas demos más las que se consideren necesarias.
+
+**Migración (PENDIENTE DE APLICAR por luigi):** `supabase/migrations/20260930_visits_notifications.sql` — tablas `visits` y `notifications` (RLS habilitado sin policies; la app usa service_role). No se pudo aplicar desde aquí: el credential supabase-mgmt da 403 `project_admin_read` en el proyecto Estación y PostgREST no ejecuta DDL. **Todo el código se degrada con elegancia si las tablas no existen** (devuelve [] / ceros / 200). Hasta que luigi pegue el SQL en el SQL editor del dashboard, visitas y notificaciones quedan dormidas.
+
+**Visitas:**
+- `src/app/api/track/route.ts`: POST público (exento en `src/middleware.ts` junto a `/api/backup/*`) que inserta path, IP (x-forwarded-for), user-agent, referer, país/ciudad (headers de Vercel), pantalla, idioma y zona horaria.
+- `src/components/visit-tracker.tsx`: client component montado en `src/app/layout.tsx`; dispara un beacon por pathname (guard contra StrictMode).
+- `src/lib/visits.ts`: `getVisits(limit)`, `getVisitStats()` (hoy en America/Caracas, UTC-4 fijo).
+- Vista "Visitas" (`src/components/views/visits-view.tsx`): KPIs hoy/total + tabla (fecha Caracas, ruta, IP, ubicación, dispositivo parseado del UA). `parseDevice()` vive en `src/lib/utils.ts` porque un módulo `"use server"` no puede exportar funciones sync a client components (rompía el build).
+
+**Notificaciones:**
+- `src/lib/notifications.ts`: `notify()` con upsert idempotente en `(type, ref_id)`; `getNotifications()` (ejecuta primero el sweep), `getUnreadCount()`, `markAllRead()`, `markRead(id)`.
+- `ensureEventNotifications()`: sin cron — corre al abrir notificaciones/campana. Genera: demo creada (hook inmediato en `createOrUpdateLicense` tras INSERT de tipo demo activo), demo por vencer ≤72h (Lite y Pro por separado, badge de producto), demo vencida (últimos 30 días), respaldo fallido (de `getFailedBackupRequests()`), dispositivo nuevo (account_devices últimos 7 días). Import dinámico de `./actions` para evitar ciclo con el hook de `createOrUpdateLicense`.
+- UI: campana en el topbar de `admin-shell.tsx` con badge de no leídas (refresco cada 60s), dropdown con 8 recientes + "Ver todas"; vista "Notificaciones" con filtro todas/no leídas, marcar leída al clic, "hace X" en español, icono por tipo y badge Lite/Pro.
+- Nuevos `AdminView`: `notifications`, `visits` (sidebar + `src/app/page.tsx`).
+
+**Verificación:** `npx tsc --noEmit` limpio, ESLint 0 errores en archivos tocados, `npm run build` verde. Smoke con `next start`: POST /api/track → 200 sin sesión; /login → 200.

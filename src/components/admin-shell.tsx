@@ -12,11 +12,14 @@ import {
   Menu,
   X,
   Shield,
+  Bell,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useProduct } from "@/lib/product-context";
 import { PRODUCTS, type ProductId } from "@/lib/products";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
 
 export type AdminView =
@@ -25,7 +28,9 @@ export type AdminView =
   | "demos"
   | "backups"
   | "subscriptions"
-  | "devices";
+  | "devices"
+  | "notifications"
+  | "visits";
 
 interface NavItem {
   id: AdminView;
@@ -41,6 +46,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "backups", label: "Respaldos", icon: DatabaseBackup, description: "Extraer respaldos" },
   { id: "subscriptions", label: "Mensualidades", icon: BadgeDollarSign, description: "Suscripciones recurrentes" },
   { id: "devices", label: "Dispositivos", icon: Smartphone, description: "Dispositivos registrados" },
+  { id: "notifications", label: "Notificaciones", icon: Bell, description: "Avisos de demos y eventos" },
+  { id: "visits", label: "Visitas", icon: Eye, description: "Quién abre el link" },
 ];
 
 interface AdminShellProps {
@@ -192,6 +199,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell onSeeAll={() => onViewChange("notifications")} />
             <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-1.5">
               <span className="size-2 rounded-full bg-success animate-pulse" />
               <span className="text-xs font-medium text-muted-foreground">Sistema en línea</span>

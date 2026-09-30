@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "./supabase";
 import { PRODUCT_PRICES, type ProductId } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
+import { notify } from "./notifications";
 import { unzipSync } from "node:zlib";
 
 function decompressBackupData(backupData: any): any {
@@ -271,6 +272,19 @@ export async function createOrUpdateLicense(licenseData: {
   }
 
   if (clErr) throw new Error(`Error al guardar en cloud_licenses: ${clErr.message}`);
+
+  // Notificación inmediata: demo NUEVA (insert, no update) de tipo demo y activa.
+  // Extender o convertir una demo existente no notifica como "nueva".
+  if (!existingLic && isDemoType(licenseData.type) && isActive) {
+    const label = licenseData.alias?.trim() || deviceId;
+    await notify(
+      "demo_created",
+      `Nueva demo · ${label}`,
+      `Demo ${licenseData.type} activada para ${deviceId}.`,
+      `demo_created:${productId}:${deviceId}`,
+      productId
+    );
+  }
 }
 
 export async function revokeLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
