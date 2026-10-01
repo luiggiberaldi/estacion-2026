@@ -57,3 +57,8 @@ Aprendizajes reutilizables.
   todavía:** el archivo versionado + la nota del bloqueo en bitácora valen más
   que un DDL suelto en `/tmp`. El deploy del código y la migración no son
   atómicos (ver "Migraciones tolerantes" arriba).
+
+## 2026-10-01 — Supabase Management API sí ejecuta SQL
+- `POST /v1/projects/{ref}/database/query` con body `{"query": "..."}` ejecuta SQL arbitrario (DDL incluido); devuelve 201. Probado en el proyecto Estación.
+- La bitácora decía que el endpoint no existía: era un problema de permisos del token viejo (403 en proyecto ajeno), no de inexistencia. `/v1/projects/{ref}/query` y `/sql` sí dan 404.
+- Lección: ante un 404/403, probar el endpoint con un token que SÍ tenga acceso al proyecto antes de declararlo inexistente.
