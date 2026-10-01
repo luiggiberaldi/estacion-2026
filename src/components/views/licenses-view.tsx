@@ -170,6 +170,7 @@ export function LicensesView() {
   const [formDays, setFormDays] = useState(3);
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
+  const [formPhone, setFormPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -411,6 +412,7 @@ export function LicensesView() {
         expiresAt,
         alias: formAlias.trim(),
         clientName: formClient.trim(),
+        clientPhone: formPhone.trim(),
         productId: formProduct,
       });
 
@@ -422,6 +424,7 @@ export function LicensesView() {
       setFormDeviceId("");
       setFormAlias("");
       setFormClient("");
+      setFormPhone("");
       setFormType("permanent");
       setFormDays(3);
       await fetchLicenses(false);
@@ -889,6 +892,19 @@ export function LicensesView() {
                   placeholder="Nombre del cliente"
                   value={formClient}
                   onChange={(e) => setFormClient(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gen-phone" className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Teléfono
+                </Label>
+                <Input
+                  id="gen-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="0412 123 4567"
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
                 />
               </div>
             </div>

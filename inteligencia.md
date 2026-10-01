@@ -40,3 +40,10 @@ Aprendizajes reutilizables.
   borrar una licencia de un producto no debe alterar la metadata del otro:
   el espejo `is_active` refleja si queda *alguna* licencia activa, y la fila
   solo se borra cuando el equipo no tiene licencias en ningún producto.
+- **Circuito del teléfono del cliente (2026-09-30):** el teléfono se captura en el
+  Lite (`business_phone` en localStorage, obligatorio desde el registro), viaja
+  en el mensaje de WhatsApp de solicitud de licencia, y luigi lo carga en el
+  campo Teléfono del diálogo "Generar licencia" → `clients.phone`. Es metadata
+  del equipo (como alias/negocio/email), no de la licencia: disponible en todas
+  las vistas y en la zona Mensajes. Los números se normalizan a formato
+  internacional (58…) solo al construir el link `wa.me`.

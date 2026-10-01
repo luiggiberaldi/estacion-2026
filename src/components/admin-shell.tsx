@@ -14,6 +14,7 @@ import {
   Shield,
   Bell,
   Eye,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useProduct } from "@/lib/product-context";
@@ -29,6 +30,7 @@ export type AdminView =
   | "backups"
   | "subscriptions"
   | "devices"
+  | "messages"
   | "notifications"
   | "visits";
 
@@ -46,6 +48,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "backups", label: "Respaldos", icon: DatabaseBackup, description: "Extraer respaldos" },
   { id: "subscriptions", label: "Mensualidades", icon: BadgeDollarSign, description: "Suscripciones recurrentes" },
   { id: "devices", label: "Dispositivos", icon: Smartphone, description: "Dispositivos registrados" },
+  { id: "messages", label: "Mensajes", icon: MessageSquare, description: "Plantillas por caso vía WhatsApp" },
   { id: "notifications", label: "Notificaciones", icon: Bell, description: "Avisos de demos y eventos" },
   { id: "visits", label: "Visitas", icon: Eye, description: "Quién abre el link" },
 ];

@@ -287,3 +287,34 @@ Lite original (el que corre en campo) debe recibir el mismo fix de
 - Nuevos `AdminView`: `notifications`, `visits` (sidebar + `src/app/page.tsx`).
 
 **Verificación:** `npx tsc --noEmit` limpio, ESLint 0 errores en archivos tocados, `npm run build` verde. Smoke con `next start`: POST /api/track → 200 sin sesión; /login → 200.
+
+---
+
+## 2026-09-30 — feat(mensajes): zona de Mensajes con plantillas por caso + teléfono en generar licencia
+
+**Pedido de luigi:** una zona en la Estación para enviar mensajes con plantillas
+automáticas para cada caso, usando los teléfonos de los clientes.
+
+**Cambios:**
+- `src/components/views/messages-view.tsx` (nuevo): vista "Mensajes".
+  - Directorio de clientes (derivado de `getLicenses`, filtrado por producto
+    Lite/Pro) con búsqueda por nombre, teléfono, código o equipo. Los clientes
+    sin teléfono llevan marca ámbar "Sin teléfono".
+  - 7 plantillas por caso: Licencia activada, Demo por vencer, Demo vencida,
+    Mensualidad próxima a vencer, Pago pendiente, Pago recibido, Primer contacto.
+  - **Sugerencia automática:** al elegir un cliente se preselecciona la plantilla
+    según el estado real de su licencia (demo vencida, demo ≤3 días, mensualidad
+    vencida, mensualidad ≤5 días, registro sin licencia, permanente).
+  - Variables auto-rellenadas: `{nombre}`, `{codigo}`, `{licencia}`, `{vencimiento}`,
+    `{dias}`, `{equipo}`. El texto es editable antes de enviar.
+  - Botón "Enviar por WhatsApp" abre `wa.me/<tel>?text=...` con el número
+    normalizado a formato internacional (58…). Botón "Copiar" como alternativa.
+  - Sin teléfono → aviso y envío bloqueado.
+- `src/components/admin-shell.tsx`: nueva entrada "Mensajes" (icono MessageSquare)
+  entre Dispositivos y Notificaciones.
+- `src/app/page.tsx`: render de `MessagesView`.
+- `src/components/views/licenses-view.tsx`: el diálogo "Generar licencia" ahora
+  pide **Teléfono** (junto a Alias y Cliente) y lo envía como `clientPhone` a
+  `createOrUpdateLicense`, que ya lo persistía en `clients.phone` (línea 235 de
+  `actions.ts`). Cierra el circuito: Lite → WhatsApp → Estación → Mensajes.
+- `npx tsc --noEmit` verificado OK.
