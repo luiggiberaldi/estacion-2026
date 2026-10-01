@@ -158,7 +158,11 @@ export function MessagesView() {
       .then((data) => {
         if (!cancelled) {
           setLicenses(data);
-          setSelectedId((prev) => prev ?? data[0]?.id ?? null);
+          setSelectedId((prev) => {
+            const withPhone = (l: License) => l.clientPhone && l.clientPhone.trim() !== "";
+            if (prev && data.some((l) => l.id === prev && withPhone(l))) return prev;
+            return data.find(withPhone)?.id ?? null;
+          });
         }
       })
       .catch(() =>
@@ -173,9 +177,11 @@ export function MessagesView() {
   }, [productId, toast]);
 
   const filtered = useMemo(() => {
+    // Solo clientes con teléfono registrado: sin teléfono no se puede enviar nada
+    const withPhone = licenses.filter((l) => l.clientPhone && l.clientPhone.trim() !== "");
     const q = query.trim().toLowerCase();
-    if (!q) return licenses;
-    return licenses.filter((l) =>
+    if (!q) return withPhone;
+    return withPhone.filter((l) =>
       [l.alias, l.clientName, l.clientPhone, l.deviceId]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q))
@@ -248,7 +254,8 @@ export function MessagesView() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Plantillas por caso para {productName(productId as ProductId)}. Elige el cliente,
-          revisa el texto y envíalo por WhatsApp.
+          revisa el texto y envíalo por WhatsApp. Solo se muestran clientes con teléfono
+          registrado.
         </p>
       </div>
 
@@ -275,7 +282,9 @@ export function MessagesView() {
               </div>
             ) : filtered.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                Sin resultados para “{query}”.
+                {query.trim()
+                  ? `Sin resultados para “${query}”.`
+                  : "Ningún cliente tiene teléfono registrado."}
               </p>
             ) : (
               filtered.map((l) => {

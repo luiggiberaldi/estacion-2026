@@ -456,3 +456,8 @@ deterministas (`scripts/test_keepalive_fleet.py`, `scripts/test_ui_rules.py`,
 
 `npx tsc --noEmit` sigue limpio. Sin commit/push/deploy (pendiente
 autorización).
+
+## 2026-10-01 — Mensajes: solo clientes con teléfono registrado
+- luigi reportó (con captura) que la vista Mensajes listaba 101 clientes incluyendo "none"/"Nuevo Dispositivo" sin teléfono — ruido inútil porque sin teléfono no se puede enviar nada.
+- `src/components/views/messages-view.tsx`: la lista ahora filtra `licenses` a solo los que tienen `clientPhone` registrado; la búsqueda opera sobre ese subconjunto; la selección por defecto cae en el primer cliente con teléfono; estado vacío distingue "sin resultados de búsqueda" de "ningún cliente tiene teléfono registrado"; subtítulo aclara el filtro.
+- `npx tsc --noEmit` limpio.
