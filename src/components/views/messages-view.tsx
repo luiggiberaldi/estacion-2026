@@ -58,22 +58,10 @@ const TEMPLATES: Template[] = [
     body: "¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta $50 (pago único, sin mensualidades).\n¿La activamos?",
   },
   {
-    id: "mensualidad_vence",
-    title: "Mensualidad próxima a vencer",
-    description: "Aviso de renovación Pro",
-    body: "¡Hola {nombre}! 👋\nTu mensualidad de PreciosAlDía Pro vence el {vencimiento} (en {dias}).\nPara no perder el acceso, renueva a tiempo. ¿Te ayudo con el pago?",
-  },
-  {
-    id: "mensualidad_vencida",
-    title: "Pago pendiente",
-    description: "La suscripción venció, pedir renovación",
-    body: "¡Hola {nombre}! 👋\nTu suscripción de PreciosAlDía Pro venció el {vencimiento}.\nTu equipo {equipo} está en período de gracia. Renueva hoy para no perder el servicio.\n¿Procedemos con el pago?",
-  },
-  {
     id: "pago_recibido",
     title: "Pago recibido",
-    description: "Confirmar pago de mensualidad",
-    body: "¡Hola {nombre}! ✅\nPago recibido. Tu suscripción de PreciosAlDía Pro está al día hasta el {vencimiento}.\n¡Gracias por tu confianza! 🙌",
+    description: "Confirmar pago de licencia permanente",
+    body: "¡Hola {nombre}! ✅\nPago recibido. Tu licencia permanente de PreciosAlDía ya está activa en tu equipo {equipo} (pago único, sin mensualidades).\n¡Gracias por tu confianza! 🙌",
   },
   {
     id: "sin_licencia",
@@ -134,11 +122,6 @@ function suggestTemplate(l: License): string {
     if (expired) return "demo_vencida";
     if (days !== null && days <= 3) return "demo_vence";
     return "demo_vence";
-  }
-  if (l.type === "monthly") {
-    if (expired) return "mensualidad_vencida";
-    if (days !== null && days <= 5) return "mensualidad_vence";
-    return "mensualidad_vence";
   }
   if (l.type === "registered") return "sin_licencia";
   return "bienvenida";

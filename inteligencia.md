@@ -47,3 +47,13 @@ Aprendizajes reutilizables.
   del equipo (como alias/negocio/email), no de la licencia: disponible en todas
   las vistas y en la zona Mensajes. Los números se normalizan a formato
   internacional (58…) solo al construir el link `wa.me`.
+- **Management API: SQL vía `/v1/projects/{ref}/database/query`** (POST con
+  `{"query": "..."}`); el path `/v1/projects/{ref}/query` no existe (404).
+  Requiere que el token pertenezca a la cuenta dueña del proyecto: un 403
+  `project_admin_read`/`database_read` ante un `GET /v1/projects` que no lista
+  el proyecto confirma cuenta equivocada, no token roto. Verificar siempre con
+  `GET /v1/projects` primero.
+- **Las migraciones viven en `docs/migrations/` aunque no se puedan aplicar
+  todavía:** el archivo versionado + la nota del bloqueo en bitácora valen más
+  que un DDL suelto en `/tmp`. El deploy del código y la migración no son
+  atómicos (ver "Migraciones tolerantes" arriba).

@@ -318,3 +318,141 @@ automáticas para cada caso, usando los teléfonos de los clientes.
   `createOrUpdateLicense`, que ya lo persistía en `clients.phone` (línea 235 de
   `actions.ts`). Cierra el circuito: Lite → WhatsApp → Estación → Mensajes.
 - `npx tsc --noEmit` verificado OK.
+
+---
+
+## 2026-09-30 — Directorio de proyectos por cliente + licencias por producto (sin commit)
+
+Alcance: solo la Estación. No se tocó Lite ni Pro. Sin commit/push/deploy.
+
+### Directorio `customer_projects` (migración 003, pendiente de aplicar)
+
+**Qué:** nuevo archivo `docs/migrations/003-directorio-proyectos-clientes.sql`
+(idempotente) con la tabla `public.customer_projects` —el directorio que dirá
+qué proyecto Supabase es de cada cliente Pro— y la función pública
+`lookup_customer_project(p_code)` (SECURITY DEFINER, `grant execute` a `anon`)
+que devuelve `supabase_url` + `supabase_anon_key` solo para códigos activos.
+
+**Estado:** la migración NO se aplicó. El endpoint de la Management API es
+`POST /v1/projects/{ref}/database/query` (el `/query` directo no existe, da
+404) y funciona (probado con `select 1` en otro proyecto), pero el token
+`custom.supabase-mgmt` guardado pertenece a la cuenta de Supabase que tiene los
+proyectos `habitos`/`workialvbp` y **no ve el proyecto Estación
+(`sodgzkablshladvbtnes`)**: devuelve 403 `project_admin_read`. Para aplicarla
+hace falta un token de management de la cuenta dueña del proyecto Estación, o
+correr el SQL en el SQL Editor del dashboard.
+
+**Por qué:** plan Pro v2 — cada cliente con su propio proyecto Supabase (tier
+gratis); la Estación es la guía que resuelve código de licencia → proyecto.
+
+### Tipos de licencia por producto en "Generar licencia" (`licenses-view.tsx`)
+
+**Qué:**
+- El Select de tipo ahora depende del producto: `pro` → solo `Permanente`;
+  `bodega` (Lite) → `Permanente` + `Demo` (demo3). La opción `Mensual`
+  desapareció del diálogo.
+- Al cambiar el producto a `pro` con otro tipo elegido, `formType` se resetea
+  a `permanent`.
+- El cálculo de `expiresAt` y el campo de días usan `isDemo(formType)` para
+  cubrir `demo3` (antes solo `demo7`).
+- El diálogo de "cambiar tipo" (`newLicType`) no se tocó.
+
+**Por qué:** decisión de luigi — el Pro siempre es licencia premium
+permanente; el Lite conserva su trial de 3 días.
+
+### Pestaña "Mensuales" oculta + plantillas de mensualidad eliminadas
+
+**Qué:** (`licenses-view.tsx`, `messages-view.tsx`)
+- La pestaña "Mensuales" se quitó de `TAB_CONFIG` (solo UI; la columna/tipo
+  `monthly` sigue en la BD y los registros históricos se siguen mostrando).
+- En Mensajes se eliminaron las plantillas `mensualidad_vence`
+  ("Mensualidad próxima a vencer") y `mensualidad_vencida` ("Mensualidad
+  vencida") y su rama de auto-selección en `suggestTemplate`. Quedan 5
+  plantillas intactas.
+
+**Por qué:** ya no se venden mensualidades; la UI no debe ofrecer lo que no
+existe.
+
+### Verificación
+
+- `npx tsc --noEmit`: limpio (exit 0).
+
+### Automatización (misma fecha, agente principal)
+
+- **`scripts/supa_sql.py`** (nuevo): ejecuta archivos SQL contra un proyecto
+  Supabase vía conexión directa Postgres (pg8000, venv
+  `~/workspace/.venvs/pgtools`). Divide en sentencias respetando bloques
+  `$tag$...$tag$`. El Management API no expone ejecución de SQL con el token
+  actual, así que el aprovisionamiento usa esta vía con el db password fijado
+  al crear el proyecto (viaja solo como argumento del proceso, no se guarda).
+- **`scripts/provision-customer.mjs`** (corregido): el esquema y el INSERT de
+  licencia ahora se aplican con `supa_sql.py` en vez del endpoint inexistente
+  `POST /v1/projects/{ref}/query`. `node provision-customer.mjs --dry-run`
+  verificado OK (7 archivos SQL en orden, código LIC- generado).
+- **`scripts/keepalive_fleet.py`** (nuevo): lee `customer_projects` activos,
+  llama `POST /rest/v1/rpc/keepalive` en cada proyecto y actualiza
+  `last_keepalive`; 2 fallos seguidos → `status='error'`. Dry-run real contra
+  la Estación: llega bien, falla con PGRST205 porque la tabla 003 aún no
+  existe. Pendiente: aplicar 003, cron cada 2 días, alertas, `.gitignore` del
+  `.keepalive_state.json`.
+- **Orden de SQL corregido** (auditoría como instalación limpia): la migración
+  `001_device_own_row_rls.sql` crea políticas que referencian
+  `public.device_pairings`, así que `supabase_pairing_setup.sql` debe aplicarse
+  ANTES de 001 en un proyecto fresco (en el proyecto compartido viejo ya
+  existía la tabla, por eso nunca falló). Actualizado en `SCHEMA_FILES` del
+  provisioner y en la cabecera de `002_customer_additions.sql`.
+
+---
+
+## 2026-09-30 — Migración 003 aplicada en producción (directorio customer_projects)
+
+**Qué:** La tabla `customer_projects` + la función `lookup_customer_project` ya
+existen en la base real de la Estación (`sodgzkablshladvbtnes`). El bloqueo
+quedó resuelto: luigi pasó el token de management de la cuenta dueña del
+proyecto (el guardado `custom.supabase-mgmt` era de otra cuenta — solo veía
+`habitos` y `workialvbp-finanzas`, de ahí los 403).
+
+**Cómo:** `POST /v1/projects/{ref}/database/query` con el contenido de
+`docs/migrations/003-directorio-proyectos-clientes.sql` (idempotente) → HTTP
+201. Verificación: la tabla y la función existen (conteo 1/1).
+
+**Prueba end-to-end:** con la anon key (pública por diseño) se llamó al RPC
+`lookup_customer_project` sin sesión → HTTP 200 y array vacío ante código
+inexistente, que es exactamente lo que espera el `lookupProjectByCode` del Pro
+("Código no encontrado"). El flujo código → proyecto queda funcional; falta
+probarlo con un código real cuando se provisione el primer cliente.
+
+**Seguridad:** el token se usó de forma transitoria (stdin, sin guardarlo en
+disco ni en memoria). Como viajó pegado en el chat, conviene rotarlo.
+
+---
+
+## 2026-09-30 — Keepalive verificado contra el directorio real
+
+**Qué:** `scripts/keepalive_fleet.py --dry-run` corre limpio contra la Estación
+(exit 0, `checked: 0` — el directorio aún no tiene clientes). Se acabó el
+`PGRST205`: la tabla `customer_projects` ya existe.
+
+**Pendiente:** crear el cron cada 2 días y las alertas — requiere aprobación
+de luigi con el intervalo explícito antes de programarlo.
+
+---
+
+## 2026-09-30 — Tests deterministas: 3 hallazgos reales corregidos
+
+luigi pidió que todo funcionara a la perfección con un plan de tests
+deterministas (`scripts/test_keepalive_fleet.py`, `scripts/test_ui_rules.py`,
+4 + 12 pruebas, todas en verde). Los tests encontraron 3 cosas reales:
+
+1. **Keepalive escribía `state.json` vacío** en cada corrida con el directorio
+   sin proyectos. Fix: `if not dry_run and rows` antes de `save_state`.
+2. **Plantilla `pago_recibido`** (messages-view) hablaba de "suscripción" y
+   "Confirmar pago de mensualidad". Fix: confirma licencia permanente, pago
+   único, sin mensualidades.
+3. **Diálogo "cambiar tipo"** (licenses-view, no se había tocado): ofrecía
+   Mensual/Demo para Pro y "Reactivar licencia" ponía `monthly`. Fix: helper
+   `clampTypeForProduct` (Pro → solo permanente; Lite → permanente + demo3),
+   opciones del Select por producto, expiración con `isDemo(newLicType)`.
+
+`npx tsc --noEmit` sigue limpio. Sin commit/push/deploy (pendiente
+autorización).

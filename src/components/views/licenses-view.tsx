@@ -84,7 +84,6 @@ type TabKey = "permanent" | "monthly" | "demo" | "revoked" | "registered";
 
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
   { key: "permanent", label: "Permanentes" },
-  { key: "monthly", label: "Mensuales" },
   { key: "demo", label: "Demos" },
   { key: "revoked", label: "Revocadas" },
   { key: "registered", label: "Sin Licencia" },
@@ -101,6 +100,15 @@ const TYPE_LABEL: Record<LicenseType, string> = {
 
 function isDemo(type?: string): boolean {
   return Boolean(type === "demo7" || type === "demo3" || type?.startsWith("demo"));
+}
+
+// El diálogo "cambiar tipo" ofrece lo mismo que el diálogo de generar:
+// Pro solo admite permanente; Lite admite permanente + demo.
+function clampTypeForProduct(type: LicenseType, prod: ProductId): LicenseType {
+  if (prod === "pro") return "permanent";
+  if (type === "demo7") return "demo3";
+  if (type === "monthly") return "permanent";
+  return type;
 }
 
 function isLicenseExpired(lic: License) {
@@ -399,8 +407,7 @@ export function LicensesView() {
     }
     setIsSubmitting(true);
     try {
-      const expiresAt =
-        formType === "demo7"
+      const expiresAt = isDemo(formType)
           ? new Date(Date.now() + formDays * 86400000).toISOString()
           : formType === "monthly"
             ? new Date(Date.now() + 30 * 86400000).toISOString()
@@ -443,12 +450,9 @@ export function LicensesView() {
     if (!changeTypeLic) return;
     setIsSubmitting(true);
     try {
-      const expiresAt =
-        newLicType === "demo7"
+      const expiresAt = isDemo(newLicType)
           ? new Date(Date.now() + newDays * 86400000).toISOString()
-          : newLicType === "monthly"
-            ? new Date(Date.now() + newDays * 86400000).toISOString()
-            : null;
+          : null;
 
       await createOrUpdateLicense({
         deviceId: changeTypeLic.deviceId,
@@ -759,7 +763,8 @@ export function LicensesView() {
                                    <DropdownMenuItem
                                      onClick={() => {
                                        setChangeTypeLic(lic);
-                                       setNewLicType("monthly");
+                                       // Reactivar: permanente (la mensualidad ya no existe)
+                                       setNewLicType("permanent");
                                        setNewDays(30);
                                      }}
                                    >
@@ -769,9 +774,11 @@ export function LicensesView() {
                                    <>
                                      <DropdownMenuItem
                                        onClick={() => {
+                                         const prod = (lic.productId as ProductId) ?? productId;
+                                         const clamped = clampTypeForProduct(lic.type, prod);
                                          setChangeTypeLic(lic);
-                                         setNewLicType(lic.type);
-                                         setNewDays(lic.type === "demo7" ? 3 : 30);
+                                         setNewLicType(clamped);
+                                         setNewDays(clamped === "demo3" ? 3 : 30);
                                        }}
                                      >
                                        <KeyRound className="size-4" /> Cambiar tipo de cuenta
@@ -913,7 +920,15 @@ export function LicensesView() {
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                   Producto
                 </Label>
-                <Select value={formProduct} onValueChange={(v) => setFormProduct(v as ProductId)}>
+                <Select
+                  value={formProduct}
+                  onValueChange={(v) => {
+                    const p = v as ProductId;
+                    setFormProduct(p);
+                    // Pro solo admite licencia permanente
+                    if (p === "pro" && formType !== "permanent") setFormType("permanent");
+                  }}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -936,13 +951,14 @@ export function LicensesView() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="permanent">Permanente</SelectItem>
-                    <SelectItem value="monthly">Mensual</SelectItem>
-                    <SelectItem value="demo7">Demo</SelectItem>
+                    {formProduct === "bodega" && (
+                      <SelectItem value="demo3">Demo</SelectItem>
+                    )}
                     <SelectItem value="registered">Sin licencia (registro)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {formType === "demo7" && (
+              {isDemo(formType) && (
                 <div className="space-y-2">
                   <Label htmlFor="gen-days" className="text-xs uppercase tracking-wider text-muted-foreground">
                     Días de demo
@@ -1042,15 +1058,16 @@ export function LicensesView() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="permanent">Permanente</SelectItem>
-                  <SelectItem value="monthly">Mensual</SelectItem>
-                  <SelectItem value="demo7">Demo</SelectItem>
+                  {((changeTypeLic?.productId as ProductId) ?? productId) === "bodega" && (
+                    <SelectItem value="demo3">Demo</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
-            {(newLicType === "monthly" || newLicType === "demo7") && (
+            {isDemo(newLicType) && (
               <div className="space-y-2">
                 <Label htmlFor="change-days">
-                  {newLicType === "demo7" ? "Días de demo" : "Días de licencia"}
+                  Días de demo
                 </Label>
                 <Input
                   id="change-days"

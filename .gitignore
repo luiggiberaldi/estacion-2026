@@ -42,3 +42,6 @@ Thumbs.db
 
 # Vercel CLI local (tokens y estado del proyecto)
 .vercel/
+
+# Estado local del keepalive (por máquina, no versionar)
+.keepalive_state.json
