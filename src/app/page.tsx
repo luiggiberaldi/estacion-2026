@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { AuthProvider } from "@/lib/auth-context";
 import { ProductProvider } from "@/lib/product-context";
 import { AdminShell, type AdminView } from "@/components/admin-shell";
-import { LoginView } from "@/components/login-view";
 import { DashboardView } from "@/components/views/dashboard-view";
 import { LicensesView } from "@/components/views/licenses-view";
 import { DemosView } from "@/components/views/demos-view";
@@ -18,22 +17,7 @@ import { VisitsView } from "@/components/views/visits-view";
 import { Loader2 } from "lucide-react";
 
 function AdminAppInternal() {
-  const { isAuthenticated, isLoading } = useAuth();
   const [activeView, setActiveView] = useState<AdminView>("dashboard");
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="size-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // La autenticación la exige el middleware (src/middleware.ts); esta puerta
-  // es defensa en profundidad por si el middleware se desactiva.
-  if (!isAuthenticated) {
-    return <LoginView />;
-  }
 
   return (
     <ProductProvider>
