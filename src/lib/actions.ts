@@ -63,6 +63,7 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
     .from("licenses")
     .select("*")
     .eq("product_id", productId)
+    .not("device_id", "is", null)
     .order("created_at", { ascending: false });
 
   if (licErr) throw new Error(`Error al obtener licencias: ${licErr.message}`);
@@ -163,18 +164,40 @@ export async function createOrUpdateLicense(licenseData: {
   /** Producto comercial. Default 'bodega' (Lite) por compatibilidad. */
   productId?: ProductId;
 }): Promise<void> {
+  if (!licenseData.deviceId || typeof licenseData.deviceId !== "string") {
+    throw new Error("El ID del dispositivo es obligatorio.");
+  }
   const admin = getSupabaseAdmin();
   const productId: ProductId = licenseData.productId ?? "bodega";
   const deviceId = licenseData.deviceId.replace(/\s+/g, '').toUpperCase();
+  if (!deviceId) {
+    throw new Error("El ID del dispositivo no es válido.");
+  }
   const now = new Date().toISOString();
 
-  // Generar código autogenerado si no existe
+  // Generar código autogenerado
   const last8 = deviceId.slice(-8).toUpperCase();
   const code = licenseData.type === "registered"
-    ? "AUTO-REGISTRO"
+    ? `SIN-LICENCIA-${deviceId}`
     : `ACTIV-${last8.slice(0, 4)}-${last8.slice(4)}`;
 
   const isActive = licenseData.status ? (licenseData.status === "active") : (licenseData.type !== "revoked");
+
+  // Limpiar cualquier fila duplicada de otro producto para este mismo deviceId para prevenir colisión de clave única
+  await admin
+    .from("licenses")
+    .delete()
+    .eq("device_id", deviceId)
+    .neq("product_id", "bodega");
+
+  // Si otra fila en licenses tuviese este mismo código único asignado erróneamente, removerla
+  if (code && !code.startsWith("SIN-LICENCIA-")) {
+    await admin
+      .from("licenses")
+      .delete()
+      .eq("code", code)
+      .neq("device_id", deviceId);
+  }
 
   // 1. Escribir en la tabla 'licenses' (para verificación de la app bodega)
   const { data: existingLic, error: fetchLicErr } = await admin
