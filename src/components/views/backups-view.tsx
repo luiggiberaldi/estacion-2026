@@ -253,14 +253,6 @@ export function BackupsView() {
   async function handleExtract(bkp: Backup) {
     setExtractingId(bkp.id);
     try {
-      if (bkp.driveUrl) {
-        window.open(bkp.driveUrl, "_blank", "noopener,noreferrer");
-        toast({
-          title: "Abriendo Google Drive",
-          description: `Descargando respaldo de ${bkp.alias ?? bkp.deviceId}`,
-        });
-        return;
-      }
       const data = await getBackupData(bkp.id);
       if (!data) {
         toast({
@@ -635,11 +627,7 @@ export function BackupsView() {
                             <DropdownMenuItem onClick={() => setDetail(bkp)}>
                               <Eye className="size-4" /> Ver detalle
                             </DropdownMenuItem>
-                            {bkp.driveUrl ? (
-                              <DropdownMenuItem onClick={() => handleExtract(bkp)}>
-                                <Download className="size-4 text-emerald-600" /> Descargar de Drive
-                              </DropdownMenuItem>
-                            ) : bkp.status === "completed" ? (
+                            {bkp.status === "completed" ? (
                               <DropdownMenuItem onClick={() => handleExtract(bkp)}>
                                 <Download className="size-4" /> Extraer respaldo
                               </DropdownMenuItem>
@@ -746,7 +734,7 @@ export function BackupsView() {
               <Send className="size-5 text-emerald-600" /> Solicitar respaldo remoto
             </DialogTitle>
             <DialogDescription>
-              Envía una señal remota a través de Supabase. Al detectar esta solicitud, el punto de venta generará su copia de seguridad y la enviará a Google Drive/Supabase.
+              Envía una señal remota a través de Supabase. Al detectar esta solicitud, el punto de venta generará su copia de seguridad y la lo guardará en el almacenamiento privado de respaldos.
             </DialogDescription>
           </DialogHeader>
 

@@ -20,7 +20,8 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { deviceId, driveUrl, sizeBytes, productCount, salesCount, customerCount } = body;
+    // driveUrl ya no se persiste: Drive se retiró del flujo de respaldos.
+    const { deviceId, sizeBytes, productCount, salesCount, customerCount } = body;
 
     if (!deviceId) {
       return NextResponse.json({ error: 'Falta el ID del dispositivo' }, { status: 400, headers: cors });
@@ -30,7 +31,6 @@ export async function POST(req: Request) {
     const admin = getSupabaseAdmin();
 
     const metadataPayload = {
-      drive_url: driveUrl || null,
       size_bytes: sizeBytes || 0,
       product_count: productCount || 0,
       sales_count: salesCount || 0,
