@@ -28,7 +28,7 @@ import {
   type AppNotification,
   type NotificationType,
 } from "@/lib/notifications";
-import { PRODUCTS } from "@/lib/products";
+import { AVAILABLE_PRODUCTS } from "@/lib/products";
 
 const TYPE_META: Record<NotificationType, { label: string; icon: LucideIcon; tone: string }> = {
   demo_created: { label: "Nueva demo", icon: Sparkles, tone: "bg-primary/15 text-primary" },
@@ -40,7 +40,7 @@ const TYPE_META: Record<NotificationType, { label: string; icon: LucideIcon; ton
 
 function productShort(id: string | null): string | null {
   if (!id) return null;
-  return PRODUCTS.find((p) => p.id === id)?.short ?? id;
+  return AVAILABLE_PRODUCTS.find((p) => p.id === id)?.short ?? null;
 }
 
 export function NotificationsView() {

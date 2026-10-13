@@ -6,10 +6,13 @@
 // El discriminador `product_id` ya existe en la tabla `licenses` de Supabase;
 // este catálogo es la única fuente de verdad del lado de la estación.
 
-export const PRODUCTS = [
-  { id: "bodega", name: "PreciosAlDía Lite", short: "Lite" },
-  { id: "pro", name: "PreciosAlDía Pro", short: "Pro" },
-] as const;
+export const PRODUCT_LITE = { id: "bodega", name: "PreciosAlDía Lite", short: "Lite" } as const;
+
+// PRO queda preservado para reactivarlo después, pero no se ofrece en la UI por ahora.
+export const PRODUCT_PRO = { id: "pro", name: "PreciosAlDía Pro", short: "Pro" } as const;
+export const PRODUCTS = [PRODUCT_LITE, PRODUCT_PRO] as const;
+// Fuente única para las opciones ofrecidas en la UI mientras PRO está pausado.
+export const AVAILABLE_PRODUCTS = [PRODUCT_LITE] as const;
 
 export type ProductId = (typeof PRODUCTS)[number]["id"];
 

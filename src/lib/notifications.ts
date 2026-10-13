@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import { isDemoType } from "./utils";
-import type { ProductId } from "./products";
+import { AVAILABLE_PRODUCTS, type ProductId } from "./products";
 
 export type NotificationType =
   | "demo_created"
@@ -80,7 +80,7 @@ export async function ensureEventNotifications(): Promise<void> {
     const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
     const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const products: ProductId[] = ["bodega", "pro"];
+    const products: ProductId[] = AVAILABLE_PRODUCTS.map((product) => product.id);
     for (const productId of products) {
       let licenses: any[] = [];
       try {

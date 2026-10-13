@@ -72,7 +72,7 @@ import { cn, formatRelative, formatDate } from "@/lib/utils";
 import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense } from "@/lib/actions";
 import type { License, LicenseType } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
-import { PRODUCTS, productName, type ProductId } from "@/lib/products";
+import { AVAILABLE_PRODUCTS, PRODUCT_LITE, PRODUCT_PRO, productName, type ProductId } from "@/lib/products";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -174,7 +174,7 @@ export function LicensesView() {
   // Form de generación
   const [formDeviceId, setFormDeviceId] = useState("");
   const [formType, setFormType] = useState<LicenseType>("permanent");
-  const [formProduct, setFormProduct] = useState<ProductId>("bodega");
+  const [formProduct, setFormProduct] = useState<ProductId>(PRODUCT_LITE.id);
   const [formDays, setFormDays] = useState(3);
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
@@ -420,7 +420,7 @@ export function LicensesView() {
         alias: formAlias.trim(),
         clientName: formClient.trim(),
         clientPhone: formPhone.trim(),
-        productId: formProduct,
+        productId: AVAILABLE_PRODUCTS.find((product) => product.id === formProduct)?.id ?? PRODUCT_LITE.id,
       });
 
       toast({
@@ -916,31 +916,32 @@ export function LicensesView() {
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Producto
-                </Label>
-                <Select
-                  value={formProduct}
-                  onValueChange={(v) => {
-                    const p = v as ProductId;
-                    setFormProduct(p);
-                    // Pro solo admite licencia permanente
-                    if (p === "pro" && formType !== "permanent") setFormType("permanent");
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRODUCTS.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {AVAILABLE_PRODUCTS.length > 1 && (
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Producto
+                  </Label>
+                  <Select
+                    value={formProduct}
+                    onValueChange={(v) => {
+                      const product = AVAILABLE_PRODUCTS.find((available) => available.id === v) ?? PRODUCT_LITE;
+                      setFormProduct(product.id);
+                      if (String(product.id) === PRODUCT_PRO.id && formType !== "permanent") setFormType("permanent");
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AVAILABLE_PRODUCTS.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground">
                   Tipo de licencia

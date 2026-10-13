@@ -17,8 +17,8 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { useProduct } from "@/lib/product-context";
-import { PRODUCTS, type ProductId } from "@/lib/products";
+import { logoutAction } from "@/lib/auth-actions";
+import { PRODUCT_LITE } from "@/lib/products";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,11 @@ interface AdminShellProps {
 
 export function AdminShell({ activeView, onViewChange, children }: AdminShellProps) {
   const { user, logout } = useAuth();
-  const { productId, setProductId } = useProduct();
+  const handleLogout = async () => {
+    await logoutAction();
+    logout();
+    window.location.assign("/login");
+  };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const activeItem = NAV_ITEMS.find((n) => n.id === activeView);
 
@@ -86,35 +90,13 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
             </div>
           </div>
 
-          {/* Selector de producto: Lite / Pro */}
-          <div className="border-b border-sidebar-border px-3 py-3">
-            <div
-              role="tablist"
-              aria-label="Producto"
-              className="grid grid-cols-2 gap-1 rounded-lg bg-sidebar-accent/60 p-1"
-            >
-              {PRODUCTS.map((p) => {
-                const isActive = productId === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setProductId(p.id as ProductId)}
-                    className={cn(
-                      "rounded-md px-2 py-1.5 text-xs font-semibold transition-colors",
-                      isActive
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                        : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
-                    )}
-                  >
-                    {p.short}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-1.5 px-1 text-[10px] leading-tight text-muted-foreground">
-              {PRODUCTS.find((p) => p.id === productId)?.name}
+          {/* Solo Lite está disponible en esta etapa; Pro permanece en el catálogo/código. */}
+          <div className="border-b border-sidebar-border px-4 py-3">
+            <span className="rounded-md bg-sidebar-accent/60 px-3 py-1.5 text-xs font-semibold text-sidebar-foreground">
+              {PRODUCT_LITE.short}
+            </span>
+            <p className="mt-2 px-1 text-[10px] leading-tight text-muted-foreground">
+              {PRODUCT_LITE.name}
             </p>
           </div>
 
@@ -162,7 +144,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={logout}
+                onClick={handleLogout}
                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                 aria-label="Cerrar sesión"
               >

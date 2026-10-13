@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { ProductId } from "@/lib/products";
+import { PRODUCT_LITE, type ProductId } from "@/lib/products";
 
 interface ProductContextValue {
   productId: ProductId;
@@ -11,15 +11,17 @@ interface ProductContextValue {
 const ProductContext = createContext<ProductContextValue | null>(null);
 
 /**
- * Producto seleccionado globalmente en la estación (Lite / Pro).
- * Las vistas de licencias, demos, mensualidades y dashboard filtran por él.
- * Backups y Dispositivos quedan globales en v1 (son del ecosistema Lite;
- * los backups Pro se integran en una fase posterior).
+ * Producto seleccionado globalmente en la estación.
+ * PRO permanece en el modelo, pero Lite es el único producto disponible en la UI
+ * hasta terminar su integración y su aislamiento de datos.
  */
 export function ProductProvider({ children }: { children: ReactNode }) {
-  const [productId, setProductId] = useState<ProductId>("bodega");
+  const [productId, setProductId] = useState<ProductId>(PRODUCT_LITE.id);
+  const setAvailableProductId = (next: ProductId) => {
+    if (next === PRODUCT_LITE.id) setProductId(next);
+  };
   return (
-    <ProductContext.Provider value={{ productId, setProductId }}>
+    <ProductContext.Provider value={{ productId, setProductId: setAvailableProductId }}>
       {children}
     </ProductContext.Provider>
   );
