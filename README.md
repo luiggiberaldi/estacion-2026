@@ -86,6 +86,11 @@ no está configurada) y aplican CORS solo a orígenes del allowlist
 (`estacion-2026.vercel.app`, `localhost:3000/5173/4173` y los de
 `BACKUP_ALLOWED_ORIGINS`).
 
+**Retiro de `/api/backup/complete` (pendiente):** no retirar hasta que (1) el POS
+suba respaldos por `/api/backup/storage/upload` y reciba acuse verificado y (2)
+los POS antiguos que aún llaman a `complete` hayan dejado de usarse. El POS actual
+ya no lo llama. Mientras tanto la ruta sigue activa y fail-closed por secreto.
+
 Tablas utilizadas: `licenses`, `cloud_licenses`, `cloud_backups`, `backup_requests`,
 `account_devices`, `supervisor_commands` (comandos remotos de recarga hacia el POS),
 y `product_images_catalog` (catálogo de imágenes de los scrapers).

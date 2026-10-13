@@ -45,3 +45,7 @@ Thumbs.db
 
 # Estado local del keepalive (por máquina, no versionar)
 .keepalive_state.json
+.vercel
+
+# Copias de respaldo con tokens: nunca al repo
+scratch/backups-prod-*/
