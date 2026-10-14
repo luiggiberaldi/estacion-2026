@@ -16,6 +16,7 @@ import {
   Loader2,
   Camera,
   QrCode,
+  Tag,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
@@ -69,7 +70,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatRelative, formatDate } from "@/lib/utils";
 
-import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense } from "@/lib/actions";
+import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense, updateLicenseAlias } from "@/lib/actions";
 import type { License, LicenseType } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
 import { AVAILABLE_PRODUCTS, PRODUCT_LITE, PRODUCT_PRO, productName, type ProductId } from "@/lib/products";
@@ -170,6 +171,9 @@ export function LicensesView() {
   const [changeTypeLic, setChangeTypeLic] = useState<License | null>(null);
   const [newLicType, setNewLicType] = useState<LicenseType>("permanent");
   const [newDays, setNewDays] = useState(30);
+  const [aliasLic, setAliasLic] = useState<License | null>(null);
+  const [aliasValue, setAliasValue] = useState("");
+  const [savingAlias, setSavingAlias] = useState(false);
 
   // Form de generación
   const [formDeviceId, setFormDeviceId] = useState("");
@@ -443,6 +447,28 @@ export function LicensesView() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleAliasSubmit() {
+    if (!aliasLic) return;
+    setSavingAlias(true);
+    try {
+      await updateLicenseAlias(aliasLic.deviceId, aliasValue);
+      toast({
+        title: "Alias actualizado",
+        description: `${aliasLic.deviceId} → ${aliasValue.trim()}`,
+      });
+      setAliasLic(null);
+      await fetchLicenses(false);
+    } catch (err: any) {
+      toast({
+        title: "Error al actualizar alias",
+        description: err.message || "Error desconocido",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAlias(false);
     }
   }
 
@@ -747,6 +773,14 @@ export function LicensesView() {
                                 <DropdownMenuItem onClick={() => handleAction("detail", lic)}>
                                   <Eye className="size-4" /> Ver detalle
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setAliasLic(lic);
+                                    setAliasValue(lic.alias ?? "");
+                                  }}
+                                >
+                                  <Tag className="size-4" /> Editar alias
+                                </DropdownMenuItem>
                                 {lic.type !== "demo7" && lic.type !== "permanent" && lic.type !== "revoked" && (
                                   <DropdownMenuItem onClick={() => handleAction("demo", lic)}>
                                     <Clock className="size-4" /> Activar demo
@@ -1033,6 +1067,46 @@ export function LicensesView() {
               {detailLic.notes}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: editar alias ── */}
+      <Dialog open={!!aliasLic} onOpenChange={(o) => !o && setAliasLic(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="size-5 text-primary" /> Editar alias
+            </DialogTitle>
+            <DialogDescription>
+              Etiqueta el dispositivo {aliasLic?.deviceId} para identificarlo fácilmente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="edit-alias" className="text-xs uppercase tracking-wider text-muted-foreground">
+              Alias
+            </Label>
+            <Input
+              id="edit-alias"
+              placeholder="Bodega Don José"
+              value={aliasValue}
+              onChange={(e) => setAliasValue(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAliasLic(null)} disabled={savingAlias}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAliasSubmit} disabled={savingAlias || !aliasValue.trim()}>
+              {savingAlias ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Guardando...
+                </>
+              ) : (
+                "Guardar alias"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

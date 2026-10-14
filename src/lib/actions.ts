@@ -310,6 +310,32 @@ export async function createOrUpdateLicense(licenseData: {
   }
 }
 
+/** Cambia solo el alias comercial (business_name), conservando el email de marketing. */
+export async function updateLicenseAlias(deviceId: string, alias: string): Promise<void> {
+  const admin = getSupabaseAdmin();
+  const cleanId = deviceId.replace(/\s+/g, "").toUpperCase();
+  const cleanAlias = alias.trim();
+  if (!cleanId) throw new Error("El ID del dispositivo es obligatorio.");
+  if (!cleanAlias) throw new Error("El alias no puede estar vacío.");
+
+  const { data: existing, error: fetchErr } = await admin
+    .from("cloud_licenses")
+    .select("id, business_name")
+    .eq("device_id", cleanId)
+    .maybeSingle();
+  if (fetchErr) throw new Error(`Error al buscar metadatos de licencia: ${fetchErr.message}`);
+  if (!existing) throw new Error("No se encontraron metadatos para este dispositivo.");
+
+  const { marketingEmail } = parseBusinessName(existing.business_name);
+  const businessName = marketingEmail ? `${cleanAlias} | ${marketingEmail}` : cleanAlias;
+
+  const { error } = await admin
+    .from("cloud_licenses")
+    .update({ business_name: businessName, updated_at: new Date().toISOString() })
+    .eq("id", existing.id);
+  if (error) throw new Error(`Error al actualizar alias: ${error.message}`);
+}
+
 export async function revokeLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
