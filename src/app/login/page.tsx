@@ -1,5 +1,14 @@
-import { redirect } from "next/navigation";
+import { AuthProvider } from "@/lib/auth-context";
+import { LoginView } from "@/components/login-view";
+
+export const metadata = {
+  title: "Acceso — Estación Maestra",
+};
 
 export default function LoginPage() {
-  redirect("/");
+  return (
+    <AuthProvider>
+      <LoginView />
+    </AuthProvider>
+  );
 }

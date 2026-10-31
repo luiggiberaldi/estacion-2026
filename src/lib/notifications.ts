@@ -3,6 +3,7 @@
 import { getSupabaseAdmin } from "./supabase";
 import { isDemoType } from "./utils";
 import { AVAILABLE_PRODUCTS, type ProductId } from "./products";
+import { requireAdmin } from "./require-admin";
 
 export type NotificationType =
   | "demo_created"
@@ -46,6 +47,7 @@ export async function notify(
   refId?: string | null,
   productId?: ProductId | null
 ): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     const { error } = await admin.from("notifications").upsert(
@@ -70,6 +72,7 @@ export async function notify(
  * vez que luigi abre el centro de notificaciones (o la campana).
  */
 export async function ensureEventNotifications(): Promise<void> {
+  await requireAdmin();
   try {
     // Import dinámico: actions.ts importa notify() de este módulo; el import
     // estático crearía un ciclo.
@@ -155,6 +158,7 @@ export async function ensureEventNotifications(): Promise<void> {
 }
 
 export async function getNotifications(limit = 50): Promise<AppNotification[]> {
+  await requireAdmin();
   await ensureEventNotifications();
   try {
     const admin = getSupabaseAdmin();
@@ -171,6 +175,7 @@ export async function getNotifications(limit = 50): Promise<AppNotification[]> {
 }
 
 export async function getUnreadCount(): Promise<number> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     const { count, error } = await admin
@@ -185,6 +190,7 @@ export async function getUnreadCount(): Promise<number> {
 }
 
 export async function markAllRead(): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     await admin
@@ -197,6 +203,7 @@ export async function markAllRead(): Promise<void> {
 }
 
 export async function markRead(id: string): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     await admin

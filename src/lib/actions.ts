@@ -6,6 +6,7 @@ import type { License, Demo, Backup, Device, DashboardStats, LicenseType, Licens
 import { isDemoType } from "./utils";
 import { notify } from "./notifications";
 import { unzipSync } from "node:zlib";
+import { requireAdmin } from "./require-admin";
 
 function decompressBackupData(backupData: any): any {
   if (backupData && backupData.compressed) {
@@ -56,6 +57,7 @@ function parseBusinessName(raw: string | null | undefined): { businessName: stri
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getLicenses(productId: ProductId = "bodega"): Promise<License[]> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
 
   // 1. Obtener datos de la tabla autoritativa de validación (licenses), scoped por producto
@@ -124,6 +126,7 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
 }
 
 export async function getDemos(productId: ProductId = "bodega"): Promise<Demo[]> {
+  await requireAdmin();
   const licenses = await getLicenses(productId);
   const now = new Date();
   return licenses
@@ -164,6 +167,7 @@ export async function createOrUpdateLicense(licenseData: {
   /** Producto comercial. Default 'bodega' (Lite) por compatibilidad. */
   productId?: ProductId;
 }): Promise<void> {
+  await requireAdmin();
   if (!licenseData.deviceId || typeof licenseData.deviceId !== "string") {
     throw new Error("El ID del dispositivo es obligatorio.");
   }
@@ -312,6 +316,7 @@ export async function createOrUpdateLicense(licenseData: {
 
 /** Cambia solo el alias comercial (business_name), conservando el email de marketing. */
 export async function updateLicenseAlias(deviceId: string, alias: string): Promise<void> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const cleanId = deviceId.replace(/\s+/g, "").toUpperCase();
   const cleanAlias = alias.trim();
@@ -337,6 +342,7 @@ export async function updateLicenseAlias(deviceId: string, alias: string): Promi
 }
 
 export async function revokeLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -369,6 +375,7 @@ export async function revokeLicense(deviceId: string, productId: ProductId = "bo
 }
 
 export async function deleteLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
 
   // Scoped por producto para no eliminar licencias de otros productos del mismo dispositivo
@@ -403,6 +410,7 @@ export async function deleteLicense(deviceId: string, productId: ProductId = "bo
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getBackups(): Promise<Backup[]> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
 
   // 1. Obtener metadata de respaldos. IMPORTANTE: no traer la columna completa
@@ -457,6 +465,7 @@ export async function getBackups(): Promise<Backup[]> {
 }
 
 export async function getBackupData(backupId: string): Promise<any> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("cloud_backups")
@@ -469,6 +478,7 @@ export async function getBackupData(backupId: string): Promise<any> {
 }
 
 export async function requestBackup(deviceId: string): Promise<void> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const cleanId = deviceId.trim().toUpperCase();
   const now = new Date().toISOString();
@@ -487,6 +497,7 @@ export async function requestBackup(deviceId: string): Promise<void> {
 }
 
 export async function requestAllBackups(productId: ProductId): Promise<number> {
+  await requireAdmin();
   const licenses = await getLicenses(productId);
   const paidLicenses = licenses.filter(
     (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
@@ -514,6 +525,7 @@ export async function requestAllBackups(productId: ProductId): Promise<number> {
 }
 
 export async function getPendingBackupRequests(): Promise<string[]> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("backup_requests")
@@ -554,6 +566,7 @@ async function resolveBackupAliases(
  * en ese caso devuelve las filas sin motivo.
  */
 export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("backup_requests")
@@ -602,6 +615,7 @@ const RELOAD_COMMAND_TTL_MS = 5 * 60 * 1000; // el POS ignora comandos expirados
  * guardrails lo prohíben explícitamente.
  */
 export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: string): Promise<number> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + RELOAD_COMMAND_TTL_MS);
@@ -640,6 +654,7 @@ export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: s
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getDevices(): Promise<Device[]> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
 
   const { data: dbDevices, error: devErr } = await admin
@@ -689,6 +704,7 @@ export async function getDevices(): Promise<Device[]> {
 }
 
 export async function updateDeviceAlias(deviceId: string, alias: string): Promise<void> {
+  await requireAdmin();
   const admin = getSupabaseAdmin();
   const { error } = await admin
     .from("account_devices")
@@ -707,6 +723,7 @@ export async function getDashboardStats(
   backups?: Backup[],
   productId: ProductId = "bodega"
 ): Promise<DashboardStats> {
+  await requireAdmin();
   // Permite reutilizar datos ya cargados por getDashboardData() sin refetch
   if (!licenses || !backups) {
     licenses = await getLicenses(productId);
@@ -745,6 +762,7 @@ export async function getDashboardStats(
  * las licencias aquí obtenidas en vez de volver a consultarlas.
  */
 export async function getDashboardData(productId: ProductId = "bodega"): Promise<{ stats: DashboardStats; licenses: License[] }> {
+  await requireAdmin();
   const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
   const stats = await getDashboardStats(licenses, backups, productId);
   return { stats, licenses };
