@@ -73,7 +73,7 @@ import { cn, formatRelative, formatDate } from "@/lib/utils";
 import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense, updateLicenseAlias } from "@/lib/actions";
 import type { License, LicenseType } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
-import { AVAILABLE_PRODUCTS, PRODUCT_LITE, PRODUCT_PRO, productName, type ProductId } from "@/lib/products";
+import { AVAILABLE_PRODUCTS, PRODUCT_LITE, productName, type ProductId } from "@/lib/products";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -104,12 +104,28 @@ function isDemo(type?: string): boolean {
 }
 
 // El diálogo "cambiar tipo" ofrece lo mismo que el diálogo de generar:
-// Pro solo admite permanente; Lite admite permanente + demo.
+// Pro solo admite permanente; Lite admite permanente + demo; Farmacia admite
+// permanente + mensual + demo (precios en licensePolicy.js).
+function offersMonthly(prod: ProductId): boolean {
+  return prod === "farmacia";
+}
+
+function offersDemo(prod: ProductId): boolean {
+  return prod !== "pro";
+}
+
 function clampTypeForProduct(type: LicenseType, prod: ProductId): LicenseType {
   if (prod === "pro") return "permanent";
   if (type === "demo7") return "demo3";
-  if (type === "monthly") return "permanent";
+  if (type === "monthly" && !offersMonthly(prod)) return "permanent";
   return type;
+}
+
+/** Vencimiento al emitir: demo por días, mensual a 30 días, el resto sin fecha. */
+function expiresAtFor(type: LicenseType, demoDays: number): string | null {
+  if (isDemo(type)) return new Date(Date.now() + demoDays * 86400000).toISOString();
+  if (type === "monthly") return new Date(Date.now() + 30 * 86400000).toISOString();
+  return null;
 }
 
 function isLicenseExpired(lic: License) {
@@ -411,11 +427,7 @@ export function LicensesView() {
     }
     setIsSubmitting(true);
     try {
-      const expiresAt = isDemo(formType)
-          ? new Date(Date.now() + formDays * 86400000).toISOString()
-          : formType === "monthly"
-            ? new Date(Date.now() + 30 * 86400000).toISOString()
-            : null;
+      const expiresAt = expiresAtFor(formType, formDays);
 
       await createOrUpdateLicense({
         deviceId: formDeviceId.trim().toUpperCase(),
@@ -476,9 +488,8 @@ export function LicensesView() {
     if (!changeTypeLic) return;
     setIsSubmitting(true);
     try {
-      const expiresAt = isDemo(newLicType)
-          ? new Date(Date.now() + newDays * 86400000).toISOString()
-          : null;
+      // Antes, pasar a "mensual" desde aquí quedaba sin vencimiento.
+      const expiresAt = expiresAtFor(newLicType, newDays);
 
       await createOrUpdateLicense({
         deviceId: changeTypeLic.deviceId,
@@ -616,7 +627,7 @@ export function LicensesView() {
             className="pl-9 bg-card"
           />
         </div>
-        <Button onClick={() => { setFormProduct(productId); setGenerateOpen(true); }} className="sm:ml-auto">
+        <Button onClick={() => { setFormProduct(productId); setFormType((t) => clampTypeForProduct(t, productId)); setGenerateOpen(true); }} className="sm:ml-auto">
           <Plus className="size-4" /> Generar licencia
         </Button>
       </div>
@@ -960,7 +971,7 @@ export function LicensesView() {
                     onValueChange={(v) => {
                       const product = AVAILABLE_PRODUCTS.find((available) => available.id === v) ?? PRODUCT_LITE;
                       setFormProduct(product.id);
-                      if (String(product.id) === PRODUCT_PRO.id && formType !== "permanent") setFormType("permanent");
+                      setFormType((current) => clampTypeForProduct(current, product.id));
                     }}
                   >
                     <SelectTrigger className="w-full">
@@ -986,7 +997,10 @@ export function LicensesView() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="permanent">Permanente</SelectItem>
-                    {formProduct === "bodega" && (
+                    {offersMonthly(formProduct) && (
+                      <SelectItem value="monthly">Mensual</SelectItem>
+                    )}
+                    {offersDemo(formProduct) && (
                       <SelectItem value="demo3">Demo</SelectItem>
                     )}
                     <SelectItem value="registered">Sin licencia (registro)</SelectItem>
@@ -1133,7 +1147,10 @@ export function LicensesView() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="permanent">Permanente</SelectItem>
-                  {((changeTypeLic?.productId as ProductId) ?? productId) === "bodega" && (
+                  {offersMonthly((changeTypeLic?.productId as ProductId) ?? productId) && (
+                    <SelectItem value="monthly">Mensual</SelectItem>
+                  )}
+                  {offersDemo((changeTypeLic?.productId as ProductId) ?? productId) && (
                     <SelectItem value="demo3">Demo</SelectItem>
                   )}
                 </SelectContent>

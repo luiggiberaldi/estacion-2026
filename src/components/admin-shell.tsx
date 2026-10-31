@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { logoutAction } from "@/lib/auth-actions";
-import { PRODUCT_LITE } from "@/lib/products";
+import { AVAILABLE_PRODUCTS, productName } from "@/lib/products";
+import { useProduct } from "@/lib/product-context";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ interface AdminShellProps {
 
 export function AdminShell({ activeView, onViewChange, children }: AdminShellProps) {
   const { user, logout } = useAuth();
+  const { productId, setProductId } = useProduct();
   const handleLogout = async () => {
     await logoutAction();
     logout();
@@ -86,17 +88,34 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-display text-base text-sidebar-foreground">Estación Maestra</span>
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Bodega v1.2</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">v1.3</span>
             </div>
           </div>
 
-          {/* Solo Lite está disponible en esta etapa; Pro permanece en el catálogo/código. */}
+          {/* Selector de producto: todas las vistas se filtran por el producto elegido.
+              Pro permanece en el catálogo/código, pausado. */}
           <div className="border-b border-sidebar-border px-4 py-3">
-            <span className="rounded-md bg-sidebar-accent/60 px-3 py-1.5 text-xs font-semibold text-sidebar-foreground">
-              {PRODUCT_LITE.short}
-            </span>
+            <div className="flex gap-1" role="tablist" aria-label="Producto">
+              {AVAILABLE_PRODUCTS.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={productId === product.id}
+                  onClick={() => setProductId(product.id)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                    productId === product.id
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent"
+                  )}
+                >
+                  {product.short}
+                </button>
+              ))}
+            </div>
             <p className="mt-2 px-1 text-[10px] leading-tight text-muted-foreground">
-              {PRODUCT_LITE.name}
+              {productName(productId)}
             </p>
           </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { PRODUCT_LITE, type ProductId } from "@/lib/products";
+import { PRODUCT_LITE, isAvailableProductId, type ProductId } from "@/lib/products";
 
 interface ProductContextValue {
   productId: ProductId;
@@ -12,13 +12,13 @@ const ProductContext = createContext<ProductContextValue | null>(null);
 
 /**
  * Producto seleccionado globalmente en la estación.
- * PRO permanece en el modelo, pero Lite es el único producto disponible en la UI
- * hasta terminar su integración y su aislamiento de datos.
+ * Solo se aceptan productos disponibles (Lite y Farmacia); PRO permanece en el
+ * modelo pero pausado hasta terminar su integración y su aislamiento de datos.
  */
 export function ProductProvider({ children }: { children: ReactNode }) {
   const [productId, setProductId] = useState<ProductId>(PRODUCT_LITE.id);
   const setAvailableProductId = (next: ProductId) => {
-    if (next === PRODUCT_LITE.id) setProductId(next);
+    if (isAvailableProductId(next)) setProductId(next);
   };
   return (
     <ProductContext.Provider value={{ productId, setProductId: setAvailableProductId }}>

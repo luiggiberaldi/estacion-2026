@@ -40,9 +40,8 @@ interface Template {
 }
 
 // Precio de venta oficial: única fuente de verdad en licensePolicy.js
-// (compartido con la caja/POS). Antes el número estaba escrito a mano y decía
-// otra cosa que el cálculo de ingresos del dashboard.
-const PERMANENT_PRICE_USD = productPrice("bodega", "permanent");
+// (compartido con la caja/POS). Las plantillas usan {precio}, que se llena con
+// el precio permanente del producto de la licencia (Lite y Farmacia difieren).
 
 const TEMPLATES: Template[] = [
   {
@@ -55,13 +54,13 @@ const TEMPLATES: Template[] = [
     id: "demo_vence",
     title: "Demo por vencer",
     description: "Recordatorio antes de que expire la prueba",
-    body: `¡Hola {nombre}! 👋\nTe escribo de PreciosAlDía: tu período de prueba vence en {dias} ({vencimiento}).\nSi quieres seguir usando la app sin interrupciones, activa tu licencia permanente por $${PERMANENT_PRICE_USD} (pago único).\n¿Te la activo?`,
+    body: `¡Hola {nombre}! 👋\nTe escribo de PreciosAlDía: tu período de prueba vence en {dias} ({vencimiento}).\nSi quieres seguir usando la app sin interrupciones, activa tu licencia permanente por {precio} (pago único).\n¿Te la activo?`,
   },
   {
     id: "demo_vencida",
     title: "Demo vencida",
     description: "La prueba terminó, ofrecer licencia",
-    body: `¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta $${PERMANENT_PRICE_USD} (pago único, sin mensualidades).\n¿La activamos?`,
+    body: `¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta {precio} (pago único, sin mensualidades).\n¿La activamos?`,
   },
   {
     id: "pago_recibido",
@@ -141,7 +140,8 @@ function fillTemplate(t: Template, l: License): string {
     .replaceAll("{licencia}", TYPE_LABEL[l.type] ?? l.type)
     .replaceAll("{vencimiento}", formatDate(l.expiresAt))
     .replaceAll("{dias}", days === null ? "—" : days <= 0 ? "hoy" : `${days} día${days === 1 ? "" : "s"}`)
-    .replaceAll("{equipo}", l.deviceId);
+    .replaceAll("{equipo}", l.deviceId)
+    .replaceAll("{precio}", `$${productPrice(l.productId ?? "bodega", "permanent")}`);
 }
 
 /* ─── Vista ─── */

@@ -70,7 +70,7 @@ import {
 } from "@/lib/actions";
 import type { Backup, BackupStatus, License } from "@/lib/types";
 import type { FailedBackupRequest } from "@/lib/actions";
-import { productName } from "@/lib/products";
+import { productName, sharesStationCloud } from "@/lib/products";
 import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -137,6 +137,14 @@ export function BackupsView() {
   const [retryingDeviceId, setRetryingDeviceId] = useState<string | null>(null);
 
   const fetchBackups = async () => {
+    // Farmacia no guarda respaldos en la nube de la Estación: nada que listar.
+    if (!sharesStationCloud(productId)) {
+      setBackups([]);
+      setPendingDeviceIds([]);
+      setFailedRequests([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const [backupsData, pendingIds, failed] = await Promise.all([
@@ -160,7 +168,7 @@ export function BackupsView() {
 
   useEffect(() => {
     fetchBackups();
-  }, []);
+  }, [productId]);
 
   const openRequestModal = async () => {
     setIsRequestModalOpen(true);
@@ -338,6 +346,15 @@ export function BackupsView() {
 
   return (
     <div className="space-y-5">
+      {!sharesStationCloud(productId) && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground">
+          <p className="font-semibold">{productName(productId)} usa su propia nube de datos</p>
+          <p className="mt-1 text-muted-foreground">
+            Sus respaldos y la recarga remota se gestionan desde su Supervisor. Desde la Estación
+            solo se emiten y administran sus licencias; estas acciones se rechazan para este producto.
+          </p>
+        </div>
+      )}
       {/* ── Top Header Actions ── */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border/60 shadow-tone-sm">
         <div>

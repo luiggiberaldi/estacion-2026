@@ -94,11 +94,18 @@ export const BACKUP_ELIGIBLE_TYPES = Object.freeze(['permanent', 'monthly']);
  */
 export const PRODUCT_PRICES = Object.freeze({
     bodega: Object.freeze({ permanent: 100, monthly: 10 }),
+    // Farmacia: otra versión del sistema (repo preciosaldia-farmacia), con su
+    // propia nube de datos; sus licencias se emiten desde la misma Estación.
+    farmacia: Object.freeze({ permanent: 300, monthly: 20 }),
     // Pro está pausado; 0 evita inventar ingresos en el dashboard.
     pro: Object.freeze({ permanent: 0, monthly: 0 }),
 });
 
-/** Producto comercial por defecto (el POS es siempre 'bodega'). */
+/**
+ * Producto comercial por defecto cuando una licencia no lo indica (compatibilidad
+ * con las cajas de bodega ya instaladas). La caja de farmacia declara 'farmacia'
+ * en su propia configuración; no depende de este valor.
+ */
 export const DEFAULT_PRODUCT_ID = 'bodega';
 
 // ── Predicados de tipo ───────────────────────────────────────────────────────

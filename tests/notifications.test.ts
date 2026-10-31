@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   upserts: [] as Array<{ rows: any[]; options: any }>,
   selectTables: [] as string[],
   getLicenses: async (_productId?: unknown): Promise<any[]> => [],
+  licensesByProduct: undefined as undefined | Record<string, () => Promise<any[]>>,
   getFailedBackupRequests: async (): Promise<any[]> => [],
 }));
 
@@ -61,8 +62,13 @@ vi.mock('@/lib/supabase', () => {
   return { getSupabaseAdmin: () => ({ from: (table: string) => builderFor(table) }) };
 });
 
+// Como el getLicenses real, el simulado filtra por producto: las fixtures
+// (h.getLicenses) son licencias de Lite ('bodega'), salvo que un test defina
+// h.licensesByProduct para otro producto (p. ej. Farmacia).
 vi.mock('@/lib/actions', () => ({
-  getLicenses: (productId: unknown) => h.getLicenses(productId),
+  getLicenses: (productId: unknown) =>
+    h.licensesByProduct?.[String(productId)]?.() ??
+    (productId === 'bodega' ? h.getLicenses(productId) : Promise.resolve([])),
   getFailedBackupRequests: () => h.getFailedBackupRequests(),
 }));
 
@@ -98,6 +104,7 @@ beforeEach(() => {
   h.upserts = [];
   h.selectTables = [];
   h.getLicenses = async () => [];
+  h.licensesByProduct = undefined;
   h.getFailedBackupRequests = async () => [];
 });
 
@@ -107,6 +114,18 @@ afterEach(() => {
 });
 
 describe('reconciliación de eventos (ensureEventNotifications)', () => {
+  it('Farmacia emite sus propias alertas, etiquetadas con su producto', async () => {
+    h.licensesByProduct = { farmacia: async () => [demoLicense('F1')] };
+
+    const { ensureEventNotifications } = await loadNotifications();
+    await ensureEventNotifications();
+
+    const rows = h.upserts.flatMap((u: any) => u.rows);
+    const farmacia = rows.filter((r: any) => r.ref_id === 'demo_expiring:F1');
+    expect(farmacia).toHaveLength(1);
+    expect(farmacia[0].product_id).toBe('farmacia');
+  });
+
   it('emite las transiciones nuevas en UN solo upsert y omite las claves ya existentes', async () => {
     h.getLicenses = async () => [demoLicense('L1'), demoLicense('L2')];
     h.getFailedBackupRequests = async () => [

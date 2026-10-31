@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import { resolveLicenseState } from "./licensePolicy";
-import { PRODUCT_PRICES, type ProductId } from "./products";
+import { PRODUCT_PRICES, isProductId, productName, sharesStationCloud, type ProductId } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
 import { notify } from "./notifications";
@@ -188,12 +188,28 @@ export async function createOrUpdateLicense(licenseData: {
 
   const isActive = licenseData.status ? (licenseData.status === "active") : (licenseData.type !== "revoked");
 
-  // Limpiar cualquier fila duplicada de otro producto para este mismo deviceId para prevenir colisión de clave única
-  await admin
+  // Un equipo tiene licencia de UN solo producto (clave única por device_id).
+  // Antes se borraba en silencio cualquier fila que no fuera de 'bodega': con
+  // varios productos eso destruiría la licencia de otro producto (o la propia de
+  // Farmacia al editarla). Ahora, si el equipo ya tiene licencia de otro
+  // producto, se detiene y lo explica; no se borra nada.
+  const { data: otherProductLic, error: otherErr } = await admin
     .from("licenses")
-    .delete()
+    .select("product_id")
     .eq("device_id", deviceId)
-    .neq("product_id", "bodega");
+    .neq("product_id", productId)
+    .limit(1)
+    .maybeSingle();
+  if (otherErr) throw new Error(`Error al verificar el producto del equipo: ${otherErr.message}`);
+  if (otherProductLic) {
+    const other = isProductId(otherProductLic.product_id)
+      ? productName(otherProductLic.product_id)
+      : String(otherProductLic.product_id);
+    throw new Error(
+      `Este equipo ya tiene una licencia de ${other}. Revisa que elegiste el producto correcto; ` +
+        `si de verdad cambia de producto, elimina primero esa licencia.`
+    );
+  }
 
   // Si otra fila en licenses tuviese este mismo código único asignado erróneamente, removerla
   if (code && !code.startsWith("SIN-LICENCIA-")) {
@@ -473,10 +489,42 @@ export async function getBackupData(backupId: string): Promise<any> {
   return decompressBackupData(data?.backup_data || null);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Guardas por producto: pedir respaldos y la recarga remota escriben en la nube
+// de la Estación (backup_requests / supervisor_commands). Solo los productos que
+// comparten esa nube (Lite) las reciben; Farmacia tiene la suya propia y la
+// orden quedaría huérfana, así que se rechaza con un mensaje claro.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function cloudOnlyError(productId: ProductId): Error {
+  return new Error(
+    `${productName(productId)} usa su propia nube de datos: los respaldos y la recarga remota ` +
+      `se gestionan desde su Supervisor, no desde la Estación.`
+  );
+}
+
+function assertStationCloud(productId: ProductId): void {
+  if (!sharesStationCloud(productId)) throw cloudOnlyError(productId);
+}
+
+/** Si el equipo tiene licencia de un producto con nube propia, rechaza la orden. */
+async function assertDeviceInStationCloud(deviceId: string): Promise<void> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("licenses")
+    .select("product_id")
+    .eq("device_id", deviceId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Error al verificar el producto del equipo: ${error.message}`);
+  if (data && isProductId(data.product_id)) assertStationCloud(data.product_id);
+}
+
 export async function requestBackup(deviceId: string): Promise<void> {
   const admin = getSupabaseAdmin();
   const cleanId = deviceId.trim().toUpperCase();
   const now = new Date().toISOString();
+  await assertDeviceInStationCloud(cleanId);
 
   // Limpiar solicitud previa del mismo dispositivo si existe
   await admin.from("backup_requests").delete().eq("device_id", cleanId);
@@ -492,6 +540,7 @@ export async function requestBackup(deviceId: string): Promise<void> {
 }
 
 export async function requestAllBackups(productId: ProductId): Promise<number> {
+  assertStationCloud(productId);
   const licenses = await getLicenses(productId);
   const paidLicenses = licenses.filter(
     (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
@@ -611,10 +660,13 @@ export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: s
   const now = new Date();
   const expiresAt = new Date(now.getTime() + RELOAD_COMMAND_TTL_MS);
 
+  assertStationCloud(productId);
+
   // Resolver los dispositivos destino (scoped por producto: nada de defaults silenciosos)
   let targetIds: string[];
   if (deviceId) {
     targetIds = [deviceId.replace(/\s+/g, "").toUpperCase()];
+    await assertDeviceInStationCloud(targetIds[0]);
   } else {
     const licenses = await getLicenses(productId);
     targetIds = licenses
@@ -740,7 +792,9 @@ export async function getDashboardStats(
     totalRevenue: permanentCount * PRODUCT_PRICES[productId].permanent + monthlyCount * PRODUCT_PRICES[productId].monthly, // Estimado de ingresos según precios del producto
     monthlyRevenue: monthlyCount * PRODUCT_PRICES[productId].monthly,
     pendingPayments: licenses.filter(l => l.status === "expired" && l.type === "monthly").length,
-    activeBackups: backups.length,
+    // Los respaldos de la nube de la Estación son de Lite; Farmacia guarda los suyos
+    // en su propia nube y aquí no se cuentan.
+    activeBackups: sharesStationCloud(productId) ? backups.length : 0,
   };
 }
 
