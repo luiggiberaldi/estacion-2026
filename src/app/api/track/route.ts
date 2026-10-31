@@ -14,9 +14,18 @@ export async function POST(req: Request) {
       tz?: string;
     };
 
+    // Endpoint público: se acotan los textos para que nadie llene la tabla.
+    const clip = (v: unknown, max: number): string | null =>
+      typeof v === "string" && v ? v.slice(0, max) : null;
+    body.path = clip(body.path, 200) ?? undefined;
+    body.referer = clip(body.referer, 300) ?? undefined;
+    body.screen = clip(body.screen, 20) ?? undefined;
+    body.lang = clip(body.lang, 20) ?? undefined;
+    body.tz = clip(body.tz, 64) ?? undefined;
+
     const fwd = req.headers.get("x-forwarded-for");
     const ip = fwd ? fwd.split(",")[0].trim() : null;
-    const userAgent = req.headers.get("user-agent");
+    const userAgent = req.headers.get("user-agent")?.slice(0, 300) ?? null;
     const country = req.headers.get("x-vercel-ip-country");
     const rawCity = req.headers.get("x-vercel-ip-city");
     let city: string | null = null;

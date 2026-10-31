@@ -2,12 +2,15 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import { resolveLicenseState } from "./licensePolicy";
-import { PRODUCT_PRICES, isProductId, productName, sharesStationCloud, type ProductId } from "./products";
+import { isProductId, productName, sharesStationCloud, type ProductId } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
 import { notify } from "./notifications";
 import { unzipSync } from "node:zlib";
 import { requireAdmin } from "./require-admin";
+import { loadSettings } from "./settings-store";
+import { termsFor } from "./settings-schema";
+import { LICENSE_TYPES } from "./licensePolicy";
 
 function decompressBackupData(backupData: any): any {
   if (backupData && backupData.compressed) {
@@ -30,12 +33,31 @@ function decompressBackupData(backupData: any): any {
 // tipo con vencimiento, así que una demo vencida seguía mostrándose "Activa"
 // mientras la caja ya la había bloqueado (AUDITORIA-LICENCIAS.md LIC-04). La
 // gracia de 5 días ahora es exclusiva de la licencia mensual.
-function deriveStatus(is_active: boolean, expires_at: string | null, type?: string): LicenseStatus {
+//
+// La gracia de la mensualidad sale de Ajustes (graceDays), igual que en la caja.
+function deriveStatus(is_active: boolean, expires_at: string | null, type?: string, graceDays?: number): LicenseStatus {
   return resolveLicenseState({
     type: type ?? null,
     isActive: is_active,
     expiresAt: expires_at,
+    graceDays,
   }).status as LicenseStatus;
+}
+
+// Las server actions reciben datos del navegador: los tipos de TypeScript no
+// existen en tiempo de ejecución, así que se validan aquí.
+function assertProduct(productId: unknown): asserts productId is ProductId {
+  if (!isProductId(productId)) throw new Error("Producto inválido.");
+}
+
+function assertLicenseType(type: unknown): asserts type is LicenseType {
+  if (!(LICENSE_TYPES as readonly unknown[]).includes(type)) throw new Error("Tipo de licencia inválido.");
+}
+
+function assertDeviceIdArg(deviceId: unknown): asserts deviceId is string {
+  if (typeof deviceId !== "string" || !deviceId.trim() || deviceId.length > 128) {
+    throw new Error("El ID del dispositivo no es válido.");
+  }
 }
 
 // Helper: Determina si el dispositivo se considera "online" (visto hace menos de 5 min)
@@ -63,7 +85,10 @@ function parseBusinessName(raw: string | null | undefined): { businessName: stri
 
 export async function getLicenses(productId: ProductId = "bodega"): Promise<License[]> {
   await requireAdmin();
+  assertProduct(productId);
   const admin = getSupabaseAdmin();
+  const { settings } = await loadSettings();
+  const graceDays = termsFor(settings, productId).monthlyGraceDays;
 
   // 1. Obtener datos de la tabla autoritativa de validación (licenses), scoped por producto
   const { data: dbLicenses, error: licErr } = await admin
@@ -115,7 +140,7 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       clientPhone: cl.phone || null,
       marketingEmail,
       type: l.type as LicenseType,
-      status: deriveStatus(l.is_active, l.expires_at, l.type),
+      status: deriveStatus(l.is_active, l.expires_at, l.type, graceDays),
       code: l.code,
       createdAt: l.created_at,
       expiresAt: l.expires_at || null,
@@ -173,11 +198,26 @@ export async function createOrUpdateLicense(licenseData: {
   productId?: ProductId;
 }): Promise<void> {
   await requireAdmin();
-  if (!licenseData.deviceId || typeof licenseData.deviceId !== "string") {
+  if (!licenseData || !licenseData.deviceId || typeof licenseData.deviceId !== "string") {
     throw new Error("El ID del dispositivo es obligatorio.");
   }
+  assertDeviceIdArg(licenseData.deviceId);
+  assertLicenseType(licenseData.type);
   const admin = getSupabaseAdmin();
   const productId: ProductId = licenseData.productId ?? "bodega";
+  assertProduct(productId);
+  if (licenseData.expiresAt != null && Number.isNaN(Date.parse(licenseData.expiresAt))) {
+    throw new Error("La fecha de vencimiento no es válida.");
+  }
+  for (const [field, value, max] of [
+    ["alias", licenseData.alias, 120],
+    ["teléfono", licenseData.clientPhone, 40],
+    ["notas", licenseData.notes, 1000],
+  ] as const) {
+    if (value != null && (typeof value !== "string" || value.length > max)) {
+      throw new Error(`El campo ${field} no es válido (máximo ${max} caracteres).`);
+    }
+  }
   const deviceId = licenseData.deviceId.replace(/\s+/g, '').toUpperCase();
   if (!deviceId) {
     throw new Error("El ID del dispositivo no es válido.");
@@ -215,13 +255,24 @@ export async function createOrUpdateLicense(licenseData: {
     );
   }
 
-  // Si otra fila en licenses tuviese este mismo código único asignado erróneamente, removerla
+  // El código sale de los últimos 8 caracteres del ID. Si otro equipo ya lo
+  // tiene, antes se BORRABA su licencia en silencio (de cualquier producto).
+  // Ahora se detiene y se explica: nunca se toca la licencia de otro cliente.
   if (code && !code.startsWith("SIN-LICENCIA-")) {
-    await admin
+    const { data: clash, error: clashErr } = await admin
       .from("licenses")
-      .delete()
+      .select("device_id")
       .eq("code", code)
-      .neq("device_id", deviceId);
+      .neq("device_id", deviceId)
+      .limit(1)
+      .maybeSingle();
+    if (clashErr) throw new Error(`Error al verificar el código de activación: ${clashErr.message}`);
+    if (clash) {
+      throw new Error(
+        `El código ${code} ya pertenece al equipo ${clash.device_id}. Revisa el ID del equipo; ` +
+          `no se modificó ninguna licencia.`
+      );
+    }
   }
 
   // 1. Escribir en la tabla 'licenses' (para verificación de la app bodega)
@@ -338,6 +389,8 @@ export async function createOrUpdateLicense(licenseData: {
 /** Cambia solo el alias comercial (business_name), conservando el email de marketing. */
 export async function updateLicenseAlias(deviceId: string, alias: string): Promise<void> {
   await requireAdmin();
+  assertDeviceIdArg(deviceId);
+  if (typeof alias !== "string" || alias.length > 120) throw new Error("El alias no es válido (máximo 120 caracteres).");
   const admin = getSupabaseAdmin();
   const cleanId = deviceId.replace(/\s+/g, "").toUpperCase();
   const cleanAlias = alias.trim();
@@ -364,6 +417,8 @@ export async function updateLicenseAlias(deviceId: string, alias: string): Promi
 
 export async function revokeLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
   await requireAdmin();
+  assertDeviceIdArg(deviceId);
+  assertProduct(productId);
   const admin = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -397,6 +452,8 @@ export async function revokeLicense(deviceId: string, productId: ProductId = "bo
 
 export async function deleteLicense(deviceId: string, productId: ProductId = "bodega"): Promise<void> {
   await requireAdmin();
+  assertDeviceIdArg(deviceId);
+  assertProduct(productId);
   const admin = getSupabaseAdmin();
 
   // Scoped por producto para no eliminar licencias de otros productos del mismo dispositivo
@@ -487,6 +544,7 @@ export async function getBackups(): Promise<Backup[]> {
 
 export async function getBackupData(backupId: string): Promise<any> {
   await requireAdmin();
+  if (typeof backupId !== "string" || !backupId || backupId.length > 64) throw new Error("Respaldo inválido.");
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("cloud_backups")
@@ -531,6 +589,7 @@ async function assertDeviceInStationCloud(deviceId: string): Promise<void> {
 
 export async function requestBackup(deviceId: string): Promise<void> {
   await requireAdmin();
+  assertDeviceIdArg(deviceId);
   const admin = getSupabaseAdmin();
   const cleanId = deviceId.trim().toUpperCase();
   const now = new Date().toISOString();
@@ -551,6 +610,7 @@ export async function requestBackup(deviceId: string): Promise<void> {
 
 export async function requestAllBackups(productId: ProductId): Promise<number> {
   await requireAdmin();
+  assertProduct(productId);
   assertStationCloud(productId);
   const licenses = await getLicenses(productId);
   const paidLicenses = licenses.filter(
@@ -670,6 +730,8 @@ const RELOAD_COMMAND_TTL_MS = 5 * 60 * 1000; // el POS ignora comandos expirados
  */
 export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: string): Promise<number> {
   await requireAdmin();
+  assertProduct(productId);
+  if (deviceId !== undefined) assertDeviceIdArg(deviceId);
   const admin = getSupabaseAdmin();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + RELOAD_COMMAND_TTL_MS);
@@ -712,6 +774,7 @@ export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: s
 
 export async function getDevices(productId: ProductId = "bodega"): Promise<Device[]> {
   await requireAdmin();
+  assertProduct(productId);
   const admin = getSupabaseAdmin();
 
   const { data: dbDevices, error: devErr } = await admin
@@ -779,10 +842,14 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
 
 export async function updateDeviceAlias(deviceId: string, alias: string): Promise<void> {
   await requireAdmin();
+  assertDeviceIdArg(deviceId);
+  if (typeof alias !== "string" || alias.trim().length === 0 || alias.length > 120) {
+    throw new Error("El alias no es válido (1 a 120 caracteres).");
+  }
   const admin = getSupabaseAdmin();
   const { error } = await admin
     .from("account_devices")
-    .update({ device_alias: alias })
+    .update({ device_alias: alias.trim() })
     .eq("device_id", deviceId);
 
   if (error) throw new Error(`Error al actualizar alias: ${error.message}`);
@@ -792,17 +859,22 @@ export async function updateDeviceAlias(deviceId: string, alias: string): Promis
 // ESTADÍSTICAS DEL DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getDashboardStats(
-  licenses?: License[],
-  backups?: Backup[],
-  productId: ProductId = "bodega"
-): Promise<DashboardStats> {
+export async function getDashboardStats(productId: ProductId = "bodega"): Promise<DashboardStats> {
   await requireAdmin();
-  // Permite reutilizar datos ya cargados por getDashboardData() sin refetch
-  if (!licenses || !backups) {
-    licenses = await getLicenses(productId);
-    backups = await getBackups();
-  }
+  assertProduct(productId);
+  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
+  return computeDashboardStats(licenses, backups, productId);
+}
+
+// Antes getDashboardStats aceptaba las listas desde el navegador; ahora el
+// cálculo es interno y siempre parte de datos leídos en el servidor.
+async function computeDashboardStats(
+  licenses: License[],
+  backups: Backup[],
+  productId: ProductId
+): Promise<DashboardStats> {
+  const { settings } = await loadSettings();
+  const prices = termsFor(settings, productId);
 
   const now = new Date();
   const in7Days = new Date(now.getTime() + 7 * 86400000);
@@ -823,8 +895,9 @@ export async function getDashboardStats(
     expiringIn7Days: activeLicenses.filter(
       (l) => l.expiresAt && new Date(l.expiresAt) > now && new Date(l.expiresAt) <= in7Days
     ).length,
-    totalRevenue: permanentCount * PRODUCT_PRICES[productId].permanent + monthlyCount * PRODUCT_PRICES[productId].monthly, // Estimado de ingresos según precios del producto
-    monthlyRevenue: monthlyCount * PRODUCT_PRICES[productId].monthly,
+    // Estimado de ingresos con los precios VIGENTES de Ajustes (no histórico).
+    totalRevenue: permanentCount * prices.permanent + monthlyCount * prices.monthly,
+    monthlyRevenue: monthlyCount * prices.monthly,
     pendingPayments: licenses.filter(l => l.status === "expired" && l.type === "monthly").length,
     // Los respaldos de la nube de la Estación son de Lite; Farmacia guarda los suyos
     // en su propia nube y aquí no se cuentan.
@@ -839,7 +912,8 @@ export async function getDashboardStats(
  */
 export async function getDashboardData(productId: ProductId = "bodega"): Promise<{ stats: DashboardStats; licenses: License[] }> {
   await requireAdmin();
+  assertProduct(productId);
   const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
-  const stats = await getDashboardStats(licenses, backups, productId);
+  const stats = await computeDashboardStats(licenses, backups, productId);
   return { stats, licenses };
 }

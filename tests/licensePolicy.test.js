@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 
 // SHA-256 de src/config/licensePolicy.js. Si cambias la política, actualiza
 // este valor en AMBOS proyectos y propaga la copia del archivo.
-const EXPECTED_POLICY_SHA256 = 'e5457cb1d8768ffd45f548352d843c9f6d5902eacf5d0ea414ac4e4dc6f6a65f';
+const EXPECTED_POLICY_SHA256 = 'f14b4ae4b4b6c19db40e03f41de0f7753acd43631c0edde53ddafd39a51da31e';
 
 // Rutas relativas donde vive el módulo según el proyecto (POS y Estación).
 const POLICY_CANDIDATES = [
@@ -204,6 +204,32 @@ describe('resolveLicenseState · regla única de vida', () => {
     it('mensual vencida hace 6 días está muerta', () => {
         expect(resolveLicenseState({ type: 'monthly', isActive: true, expiresAt: iso(NOW - 6 * DAY), now: NOW }))
             .toMatchObject({ status: 'expired', isPremium: false });
+    });
+
+    it('mensual respeta los días de gracia de Ajustes (graceDays)', () => {
+        const vencida8 = { type: 'monthly', isActive: true, expiresAt: iso(NOW - 8 * DAY), now: NOW };
+        expect(resolveLicenseState({ ...vencida8, graceDays: 10 }))
+            .toMatchObject({ status: 'active', isGrace: true, graceDays: 2 });
+        expect(resolveLicenseState({ ...vencida8, graceDays: 5 }))
+            .toMatchObject({ status: 'expired', isPremium: false });
+        // Gracia 0: se corta al vencer.
+        expect(resolveLicenseState({ type: 'monthly', isActive: true, expiresAt: iso(NOW - 1000), now: NOW, graceDays: 0 }))
+            .toMatchObject({ status: 'expired' });
+    });
+
+    it('graceDays inválido se ignora y vale la gracia fija', () => {
+        const vencida4 = { type: 'monthly', isActive: true, expiresAt: iso(NOW - 4 * DAY), now: NOW };
+        for (const bad of [-1, 31, 2.5, NaN, '10', null, undefined]) {
+            expect(resolveLicenseState({ ...vencida4, graceDays: bad }))
+                .toMatchObject({ status: 'active', isGrace: true, graceDays: 1 });
+        }
+    });
+
+    it('graceDays no da gracia a demos ni a permanentes con vencimiento', () => {
+        expect(resolveLicenseState({ type: 'demo3', isActive: true, expiresAt: iso(NOW - DAY), now: NOW, graceDays: 10 }))
+            .toMatchObject({ status: 'expired' });
+        expect(resolveLicenseState({ type: 'permanent', isActive: true, expiresAt: iso(NOW - DAY), now: NOW, graceDays: 10 }))
+            .toMatchObject({ status: 'expired' });
     });
 
     it('mensual sin vencimiento NO es premium para siempre (LIC-10)', () => {

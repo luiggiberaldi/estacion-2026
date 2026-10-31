@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   KeyRound,
@@ -15,6 +15,8 @@ import {
   Bell,
   Eye,
   MessageSquare,
+  Settings,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { logoutAction } from "@/lib/auth-actions";
@@ -23,6 +25,7 @@ import { useProduct } from "@/lib/product-context";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
+import { getAdminPinStatus } from "@/lib/settings-actions";
 
 export type AdminView =
   | "dashboard"
@@ -33,7 +36,8 @@ export type AdminView =
   | "devices"
   | "messages"
   | "notifications"
-  | "visits";
+  | "visits"
+  | "settings";
 
 interface NavItem {
   id: AdminView;
@@ -52,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "messages", label: "Mensajes", icon: MessageSquare, description: "Plantillas por caso vía WhatsApp" },
   { id: "notifications", label: "Notificaciones", icon: Bell, description: "Avisos de demos y eventos" },
   { id: "visits", label: "Visitas", icon: Eye, description: "Quién abre el link" },
+  { id: "settings", label: "Ajustes", icon: Settings, description: "Precios, plazos, PIN y plantillas" },
 ];
 
 interface AdminShellProps {
@@ -70,6 +75,13 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
   };
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const activeItem = NAV_ITEMS.find((n) => n.id === activeView);
+  // Aviso persistente mientras el PIN sea uno trivial (p. ej. 000000).
+  const [weakPin, setWeakPin] = useState(false);
+  useEffect(() => {
+    getAdminPinStatus()
+      .then((s) => setWeakPin(s.isWeak))
+      .catch(() => setWeakPin(false));
+  }, [activeView]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -88,7 +100,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-display text-base text-sidebar-foreground">Estación Maestra</span>
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">v1.3</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">v2.0</span>
             </div>
           </div>
 
@@ -212,7 +224,21 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
         </header>
 
         {/* Page content */}
-        <main className="p-4 lg:p-8 max-w-7xl mx-auto">{children}</main>
+        <main className="p-4 lg:p-8 max-w-7xl mx-auto">
+          {weakPin && activeView !== "settings" && (
+            <button
+              type="button"
+              onClick={() => onViewChange("settings")}
+              className="mb-4 flex w-full items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-left text-sm"
+            >
+              <AlertTriangle className="size-4 shrink-0 text-destructive" />
+              <span>
+                <strong>El PIN de acceso es muy fácil de adivinar.</strong> Toca aquí para cambiarlo en Ajustes.
+              </span>
+            </button>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

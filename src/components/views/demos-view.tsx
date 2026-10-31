@@ -34,6 +34,7 @@ import { cn, formatDate, formatRelative } from "@/lib/utils";
 
 import { getDemos, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
 import { useProduct } from "@/lib/product-context";
+import { useSettings } from "@/lib/settings-context";
 import type { Demo, DevicePlatform } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -82,6 +83,8 @@ function urgencyBadge(days: number): { label: string; className: string } {
 export function DemosView() {
   const { toast } = useToast();
   const { productId } = useProduct();
+  const { terms } = useSettings();
+  const { demoDays, demoExtensionDays } = terms(productId);
   const [demos, setDemos] = useState<Demo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -165,12 +168,12 @@ export function DemosView() {
   async function handleExtend(demo: Demo) {
     setPendingId(demo.id);
     try {
-      // Extiende desde el vencimiento real (o desde hoy si ya expiró): +7 días
+      // Extiende desde el vencimiento real (o desde hoy si ya expiró): +N días de Ajustes
       const base = Math.max(
         demo.expiresAt ? new Date(demo.expiresAt).getTime() : 0,
         Date.now()
       );
-      const newExpiresAt = new Date(base + 7 * 86400000).toISOString();
+      const newExpiresAt = new Date(base + demoExtensionDays * 86400000).toISOString();
 
       await createOrUpdateLicense({
         deviceId: demo.deviceId,
@@ -182,7 +185,7 @@ export function DemosView() {
 
       toast({
         title: "Demo extendida",
-        description: `${demo.alias ?? demo.deviceId} · +7 días`,
+        description: `${demo.alias ?? demo.deviceId} · +${demoExtensionDays} días`,
       });
       await fetchDemos(false);
     } catch (err: any) {
@@ -306,8 +309,9 @@ export function DemosView() {
           {paginatedDemos.map((demo) => {
             const PlatformIcon = demo.platform ? PLATFORM_ICON[demo.platform] : Smartphone;
             const isRevoked = demo.status === "revoked";
-            // Duración real de la demo (demo7 = 7 días, demo3 = 3 días)
-            const demoDurationDays = demo.type === "demo3" ? 3 : 7;
+            // Duración de la demo: la automática (demo3) usa los días de Ajustes;
+            // la regalada/extendida (demo7) los días de extensión.
+            const demoDurationDays = Math.max(1, demo.type === "demo3" ? demoDays : demoExtensionDays);
             const pct = Math.max(0, Math.min(100, (demo.daysRemaining / demoDurationDays) * 100));
             const ub = isRevoked
               ? { label: "Revocada", className: "bg-secondary text-muted-foreground border-transparent" }
@@ -396,7 +400,7 @@ export function DemosView() {
                       ) : (
                         <CalendarPlus className="size-3.5" />
                       )}
-                      Extender 7d
+                      Extender {demoExtensionDays}d
                     </Button>
                     <Button
                       size="sm"

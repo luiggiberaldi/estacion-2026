@@ -3,7 +3,9 @@
 // así funciona tanto en server actions (Node) como en middleware (Edge).
 //
 // Formato cookie `em_session`: base64url(payload).base64url(firma)
-// payload = JSON { e: email, x: expiración_epoch_ms }
+// payload = JSON { e: email, x: expiración_epoch_ms, v: versión_del_PIN }
+// La versión sube al cambiar el PIN en Ajustes: requireAdmin() rechaza las
+// sesiones emitidas con un PIN anterior. El middleware solo verifica la firma.
 
 const COOKIE_NAME = "em_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas
@@ -41,8 +43,8 @@ export function sessionMaxAgeSeconds(): number {
 }
 
 /** Firma una sesión. Requiere ADMIN_SESSION_SECRET configurado. */
-export async function signSession(email: string, secret: string): Promise<string> {
-  const payload = JSON.stringify({ e: email, x: Date.now() + SESSION_TTL_MS });
+export async function signSession(email: string, secret: string, pinVersion = 0): Promise<string> {
+  const payload = JSON.stringify({ e: email, x: Date.now() + SESSION_TTL_MS, v: pinVersion });
   const payloadB64 = b64urlEncode(new TextEncoder().encode(payload));
   const key = await hmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadB64));
@@ -57,6 +59,20 @@ export async function verifySession(
   cookieValue: string | undefined | null,
   secret: string | undefined | null
 ): Promise<string | null> {
+  return (await verifySessionClaims(cookieValue, secret))?.email ?? null;
+}
+
+export interface SessionClaims {
+  email: string;
+  /** Versión del PIN con que se emitió la sesión (0 = PIN del entorno). */
+  pinVersion: number;
+}
+
+/** Como verifySession, pero devuelve también la versión del PIN. */
+export async function verifySessionClaims(
+  cookieValue: string | undefined | null,
+  secret: string | undefined | null
+): Promise<SessionClaims | null> {
   try {
     if (!cookieValue || !secret) return null;
     const [payloadB64, sigB64] = cookieValue.split(".");
@@ -72,10 +88,11 @@ export async function verifySession(
     const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64))) as {
       e?: string;
       x?: number;
+      v?: number;
     };
     if (typeof payload.e !== "string" || typeof payload.x !== "number") return null;
     if (Date.now() > payload.x) return null;
-    return payload.e;
+    return { email: payload.e, pinVersion: Number.isInteger(payload.v) ? (payload.v as number) : 0 };
   } catch {
     return null;
   }

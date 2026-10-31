@@ -52,7 +52,7 @@ import { cn, formatCurrency, formatDate, formatRelative } from "@/lib/utils";
 
 import { getLicenses, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
 import { useProduct } from "@/lib/product-context";
-import { PRODUCT_PRICES } from "@/lib/products";
+import { useSettings } from "@/lib/settings-context";
 import type { Subscription, SubscriptionStatus, PaymentMethod } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -89,6 +89,8 @@ const PAYMENT_META: Record<
 export function SubscriptionsView() {
   const { toast } = useToast();
   const { productId } = useProduct();
+  const { terms } = useSettings();
+  const { monthly: monthlyPrice, monthlyGraceDays } = terms(productId);
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState<Subscription | null>(null);
@@ -104,12 +106,15 @@ export function SubscriptionsView() {
           // Sin vencimiento real en el backend: no fabricar fecha (+15d antes).
           // dueDate null se muestra como "—" en la tabla.
           const dueDate = l.expiresAt || null;
+          // Gracia = ya venció pero la licencia sigue viva (la política le da
+          // monthlyGraceDays de Ajustes). Antes se marcaba "gracia" a las que
+          // aún NO vencían (faltaban <5 días), al revés.
           const status =
             l.status === "revoked"
               ? "cancelled"
               : l.status === "expired"
                 ? "expired"
-                : dueDate && new Date(dueDate) < new Date(Date.now() + 5 * 86400000)
+                : dueDate && new Date(dueDate).getTime() <= Date.now()
                   ? "grace_period"
                   : "current";
           return {
@@ -119,13 +124,13 @@ export function SubscriptionsView() {
             clientName: l.clientName,
             clientPhone: l.clientPhone,
             status: status as Subscription["status"],
-            amountUsd: PRODUCT_PRICES[productId].monthly,
+            amountUsd: monthlyPrice,
             paymentMethod: "pago_movil" as Subscription["paymentMethod"],
             startDate: l.createdAt,
             dueDate,
             lastPaymentDate: l.activatedAt || null,
             monthsPaid: Math.max(1, Math.floor((Date.now() - new Date(l.createdAt).getTime()) / (30 * 86400000))),
-            gracePeriodEndsAt: status === "grace_period" && dueDate ? new Date(new Date(dueDate).getTime() + 5 * 86400000).toISOString() : null,
+            gracePeriodEndsAt: status === "grace_period" && dueDate ? new Date(new Date(dueDate).getTime() + monthlyGraceDays * 86400000).toISOString() : null,
             notes: l.notes,
           };
         });
@@ -143,7 +148,7 @@ export function SubscriptionsView() {
 
   useEffect(() => {
     fetchSubscriptions();
-  }, [productId]);
+  }, [productId, monthlyPrice, monthlyGraceDays]);
 
   const {
     currentPage,

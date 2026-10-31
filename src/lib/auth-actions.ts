@@ -1,21 +1,18 @@
 "use server";
 
 // src/lib/auth-actions.ts — Login/logout server-side.
-// El PIN NUNCA viaja al bundle del cliente: aquí se compara el SHA-256 del
-// PIN contra ADMIN_PIN_SHA256 (variable solo-servidor) en tiempo constante,
-// y se emite una cookie httpOnly firmada con ADMIN_SESSION_SECRET.
+// El PIN NUNCA viaja al bundle del cliente: aquí se compara su SHA-256 contra
+// el PIN vigente (el cambiado en Ajustes o, si no hay, ADMIN_PIN_SHA256 del
+// entorno) en tiempo constante, y se emite una cookie httpOnly firmada con
+// ADMIN_SESSION_SECRET que lleva la versión del PIN.
+//
+// Todo lo exportado aquí es un endpoint público: los ayudantes internos viven
+// en admin-session.ts.
 
 import { cookies, headers } from "next/headers";
-import { createHash, timingSafeEqual } from "node:crypto";
-import {
-  signSession,
-  verifySession,
-  sessionCookieName,
-  sessionMaxAgeSeconds,
-} from "./session";
-
-// Identidad fija de la sesión: el acceso es solo con PIN, sin correo.
-const ADMIN_IDENTITY = "admin";
+import { sessionCookieName } from "./session";
+import { currentSessionEmail, pinMatches, setSessionCookie } from "./admin-session";
+import { isLoginBlocked, loadAdminPin, recordLoginFailure } from "./settings-store";
 
 export interface AdminSessionUser {
   email: string;
@@ -23,8 +20,8 @@ export interface AdminSessionUser {
   role: "superadmin";
 }
 
-// Throttle best-effort en memoria (por instancia): 10 intentos / 10 min por IP.
-// Es la principal defensa contra fuerza bruta del PIN (6 dígitos).
+// Freno en memoria (por instancia): 10 intentos / 10 min por IP. Respaldo del
+// freno compartido en la base (station_login_failures), que es el principal.
 const attempts = new Map<string, number[]>();
 function throttled(key: string): boolean {
   const now = Date.now();
@@ -39,52 +36,36 @@ function throttled(key: string): boolean {
   return false;
 }
 
-function sha256Hex(s: string): Buffer {
-  return createHash("sha256").update(s, "utf8").digest();
-}
-
-function pinMatches(pin: string, expectedHex: string): boolean {
-  if (!/^\d{6}$/.test(pin)) return false; // formato inválido = fail-closed
-  const clean = expectedHex.trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(clean)) return false;
-  const a = sha256Hex(pin);
-  const b = Buffer.from(clean, "hex");
-  return a.length === b.length && timingSafeEqual(a, b);
+async function clientIp(): Promise<string> {
+  const h = await headers();
+  return h.get("x-real-ip")?.trim() || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }
 
 export async function loginAction(
   pin: string
 ): Promise<{ ok: boolean; error?: string }> {
   const secret = process.env.ADMIN_SESSION_SECRET;
-  const pinHash = process.env.ADMIN_PIN_SHA256;
-  if (!secret || !pinHash) {
-    console.error("[auth] ADMIN_SESSION_SECRET o ADMIN_PIN_SHA256 no configurados");
+  const current = await loadAdminPin();
+  if (!secret || !current.sha256) {
+    console.error("[auth] ADMIN_SESSION_SECRET o el PIN no están configurados");
     return { ok: false, error: "Acceso no configurado en el servidor." };
   }
 
-  const ip =
-    (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "unknown";
-  if (throttled(`login:${ip}`)) {
+  const ip = await clientIp();
+  const blocked = await isLoginBlocked(ip);
+  if (blocked || throttled(`login:${ip}`)) {
     return { ok: false, error: "Demasiados intentos. Espera unos minutos." };
   }
 
   // Pequeña demora uniforme para no facilitar timing attacks.
   await new Promise((r) => setTimeout(r, 500));
 
-  if (!pinMatches(pin, pinHash)) {
+  if (!pinMatches(String(pin ?? ""), current.sha256)) {
+    await recordLoginFailure(ip);
     return { ok: false, error: "PIN incorrecto" };
   }
 
-  const value = await signSession(ADMIN_IDENTITY, secret);
-  const jar = await cookies();
-  jar.set(sessionCookieName(), value, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: sessionMaxAgeSeconds(),
-  });
+  await setSessionCookie(secret, current.version);
   return { ok: true };
 }
 
@@ -94,14 +75,12 @@ export async function logoutAction(): Promise<void> {
 }
 
 export async function getSessionUser(): Promise<AdminSessionUser | null> {
-  const jar = await cookies();
-  const email = await verifySession(jar.get(sessionCookieName())?.value, process.env.ADMIN_SESSION_SECRET);
+  const email = await currentSessionEmail();
   if (!email) return null;
   return { email, name: "Luiggi Beraldi", role: "superadmin" };
 }
 
-/** Para uso en server components cuando haga falta (no expone la cookie). */
+/** Email de la sesión vigente, o null. Para server components y rutas API. */
 export async function requireSessionEmail(): Promise<string | null> {
-  const jar = await cookies();
-  return verifySession(jar.get(sessionCookieName())?.value, process.env.ADMIN_SESSION_SECRET);
+  return currentSessionEmail();
 }

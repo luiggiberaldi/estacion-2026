@@ -15,6 +15,8 @@ import { DevicesView } from "@/components/views/devices-view";
 import { MessagesView } from "@/components/views/messages-view";
 import { NotificationsView } from "@/components/views/notifications-view";
 import { VisitsView } from "@/components/views/visits-view";
+import { SettingsView } from "@/components/views/settings-view";
+import { SettingsProvider } from "@/lib/settings-context";
 import { Loader2 } from "lucide-react";
 
 function AdminAppInternal() {
@@ -37,6 +39,7 @@ function AdminAppInternal() {
 
   return (
     <ProductProvider>
+      <SettingsProvider>
       <AdminShell activeView={activeView} onViewChange={setActiveView}>
         {activeView === "dashboard" && <DashboardView />}
         {activeView === "licenses" && <LicensesView />}
@@ -47,7 +50,9 @@ function AdminAppInternal() {
         {activeView === "messages" && <MessagesView />}
         {activeView === "notifications" && <NotificationsView />}
         {activeView === "visits" && <VisitsView />}
+        {activeView === "settings" && <SettingsView />}
       </AdminShell>
+      </SettingsProvider>
     </ProductProvider>
   );
 }

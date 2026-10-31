@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MessageSquare,
   Search,
@@ -14,7 +14,8 @@ import { getLicenses } from "@/lib/actions";
 import type { License } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
 import { productName, type ProductId } from "@/lib/products";
-import { productPrice } from "@/lib/licensePolicy";
+import { useSettings } from "@/lib/settings-context";
+import type { ContactSettings, MessageTemplate, ProductTerms } from "@/lib/settings-schema";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -30,51 +31,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-/* ─── Plantillas por caso ─── */
-
-interface Template {
-  id: string;
-  title: string;
-  description: string;
-  body: string;
-}
-
-// Precio de venta oficial: única fuente de verdad en licensePolicy.js
-// (compartido con la caja/POS). Las plantillas usan {precio}, que se llena con
-// el precio permanente del producto de la licencia (Lite y Farmacia difieren).
-
-const TEMPLATES: Template[] = [
-  {
-    id: "bienvenida",
-    title: "Licencia activada",
-    description: "Dar la bienvenida tras activar",
-    body: "¡Hola {nombre}! 👋\nTu licencia {licencia} de PreciosAlDía ya está activa en tu equipo {equipo}.\nCualquier duda con la app, respóndeme por aquí.\n¡A vender! 💪",
-  },
-  {
-    id: "demo_vence",
-    title: "Demo por vencer",
-    description: "Recordatorio antes de que expire la prueba",
-    body: `¡Hola {nombre}! 👋\nTe escribo de PreciosAlDía: tu período de prueba vence en {dias} ({vencimiento}).\nSi quieres seguir usando la app sin interrupciones, activa tu licencia permanente por {precio} (pago único).\n¿Te la activo?`,
-  },
-  {
-    id: "demo_vencida",
-    title: "Demo vencida",
-    description: "La prueba terminó, ofrecer licencia",
-    body: `¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta {precio} (pago único, sin mensualidades).\n¿La activamos?`,
-  },
-  {
-    id: "pago_recibido",
-    title: "Pago recibido",
-    description: "Confirmar pago de licencia permanente",
-    body: "¡Hola {nombre}! ✅\nPago recibido. Tu licencia permanente de PreciosAlDía ya está activa en tu equipo {equipo} (pago único, sin mensualidades).\n¡Gracias por tu confianza! 🙌",
-  },
-  {
-    id: "sin_licencia",
-    title: "Primer contacto",
-    description: "Equipo registrado sin licencia activa",
-    body: "¡Hola {nombre}! 👋\nVi que registraste PreciosAlDía en tu equipo {equipo} pero aún no tienes licencia activa.\nTienes 3 días de prueba gratis. ¿Quieres que te ayude a activarla?",
-  },
-];
+/* ─── Plantillas por caso ───
+ * Las plantillas, los precios y los datos de contacto vienen de Ajustes
+ * (station_settings). Sin la migración 006 se usan las de fábrica.
+ */
 
 const TYPE_LABEL: Record<string, string> = {
   permanent: "permanente",
@@ -129,10 +89,16 @@ function suggestTemplate(l: License): string {
     return "demo_vence";
   }
   if (l.type === "registered") return "sin_licencia";
+  if (l.type === "monthly") return "mensualidad";
   return "bienvenida";
 }
 
-function fillTemplate(t: Template, l: License): string {
+function fillTemplate(
+  t: MessageTemplate,
+  l: License,
+  terms: ProductTerms,
+  contact: ContactSettings
+): string {
   const days = daysUntil(l.expiresAt);
   return t.body
     .replaceAll("{nombre}", clientLabel(l))
@@ -141,13 +107,20 @@ function fillTemplate(t: Template, l: License): string {
     .replaceAll("{vencimiento}", formatDate(l.expiresAt))
     .replaceAll("{dias}", days === null ? "—" : days <= 0 ? "hoy" : `${days} día${days === 1 ? "" : "s"}`)
     .replaceAll("{equipo}", l.deviceId)
-    .replaceAll("{precio}", `$${productPrice(l.productId ?? "bodega", "permanent")}`);
+    .replaceAll("{producto}", productName((l.productId ?? "bodega") as ProductId))
+    .replaceAll("{precio}", `$${terms.permanent}`)
+    .replaceAll("{mensual}", `$${terms.monthly}`)
+    .replaceAll("{demo}", String(terms.demoDays))
+    .replaceAll("{pago}", contact.paymentInfo || "—")
+    .replaceAll("{negocio}", contact.businessName);
 }
 
 /* ─── Vista ─── */
 
 export function MessagesView() {
   const { productId } = useProduct();
+  const { settings, terms } = useSettings();
+  const TEMPLATES = settings.templates;
   const { toast } = useToast();
   const [licenses, setLicenses] = useState<License[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -199,9 +172,10 @@ export function MessagesView() {
     [licenses, selectedId]
   );
 
-  const template = useMemo(
-    () => TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0],
-    [templateId]
+  const fill = useCallback(
+    (t: MessageTemplate, l: License) =>
+      fillTemplate(t, l, terms(l.productId ?? "bodega"), settings.contact),
+    [terms, settings.contact]
   );
 
   // Al cambiar de cliente: sugerir plantilla según su caso y prellenar el texto
@@ -211,16 +185,16 @@ export function MessagesView() {
       return;
     }
     const suggested = suggestTemplate(selected);
-    setTemplateId(suggested);
     const t = TEMPLATES.find((x) => x.id === suggested) ?? TEMPLATES[0];
-    setText(fillTemplate(t, selected));
-  }, [selected]);
+    setTemplateId(t.id);
+    setText(fill(t, selected));
+  }, [selected, TEMPLATES, fill]);
 
   // Al cambiar de plantilla: regenerar el texto para el cliente actual
   const handleTemplateChange = (id: string) => {
     setTemplateId(id);
     const t = TEMPLATES.find((x) => x.id === id);
-    if (t && selected) setText(fillTemplate(t, selected));
+    if (t && selected) setText(fill(t, selected));
   };
 
   const sendPhone = selected ? waPhone(selected.clientPhone) : null;

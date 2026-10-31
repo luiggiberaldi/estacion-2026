@@ -73,6 +73,7 @@ import { cn, formatRelative, formatDate } from "@/lib/utils";
 import { getLicenses, createOrUpdateLicense, revokeLicense, deleteLicense, updateLicenseAlias } from "@/lib/actions";
 import type { License, LicenseType } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
+import { useSettings } from "@/lib/settings-context";
 import { AVAILABLE_PRODUCTS, PRODUCT_LITE, productName, type ProductId } from "@/lib/products";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -93,8 +94,8 @@ const TAB_CONFIG: { key: TabKey; label: string }[] = [
 const TYPE_LABEL: Record<LicenseType, string> = {
   permanent: "Permanente",
   monthly: "Mensual",
-  demo7: "Demo (7d)",
-  demo3: "Demo (3d)",
+  demo7: "Demo extendida",
+  demo3: "Demo",
   revoked: "Revocada",
   registered: "Sin licencia",
 };
@@ -172,6 +173,8 @@ const TYPE_BADGE: Record<LicenseType, string> = {
 export function LicensesView() {
   const { toast } = useToast();
   const { productId } = useProduct();
+  const { terms } = useSettings();
+  const { demoDays } = terms(productId);
   const [licenses, setLicenses] = useState<License[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>("permanent");
@@ -195,7 +198,7 @@ export function LicensesView() {
   const [formDeviceId, setFormDeviceId] = useState("");
   const [formType, setFormType] = useState<LicenseType>("permanent");
   const [formProduct, setFormProduct] = useState<ProductId>(PRODUCT_LITE.id);
-  const [formDays, setFormDays] = useState(3);
+  const [formDays, setFormDays] = useState(demoDays);
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
   const [formPhone, setFormPhone] = useState("");
@@ -449,7 +452,7 @@ export function LicensesView() {
       setFormClient("");
       setFormPhone("");
       setFormType("permanent");
-      setFormDays(3);
+      setFormDays(demoDays);
       await fetchLicenses(false);
     } catch (err: any) {
       toast({
@@ -535,11 +538,11 @@ export function LicensesView() {
         await createOrUpdateLicense({
           deviceId: lic.deviceId,
           type: "demo3",
-          expiresAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+          expiresAt: new Date(Date.now() + demoDays * 86400000).toISOString(),
           status: "active",
           productId: (lic.productId as ProductId) ?? productId,
         });
-        toast({ title: "Demo activada", description: `${lic.alias ?? lic.deviceId} · 3 días` });
+        toast({ title: "Demo activada", description: `${lic.alias ?? lic.deviceId} · ${demoDays} días` });
         await fetchLicenses(false);
       } catch (err: any) {
         toast({
@@ -823,7 +826,7 @@ export function LicensesView() {
                                          const clamped = clampTypeForProduct(lic.type, prod);
                                          setChangeTypeLic(lic);
                                          setNewLicType(clamped);
-                                         setNewDays(clamped === "demo3" ? 3 : 30);
+                                         setNewDays(clamped === "demo3" ? demoDays : 30);
                                        }}
                                      >
                                        <KeyRound className="size-4" /> Cambiar tipo de cuenta
@@ -1018,7 +1021,7 @@ export function LicensesView() {
                     min={1}
                     max={30}
                     value={formDays}
-                    onChange={(e) => setFormDays(Number(e.target.value) || 7)}
+                    onChange={(e) => setFormDays(Number(e.target.value) || demoDays)}
                   />
                 </div>
               )}
