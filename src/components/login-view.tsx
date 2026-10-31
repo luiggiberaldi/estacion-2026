@@ -48,7 +48,7 @@ export function LoginView() {
           <div className="space-y-1">
             <CardTitle className="text-2xl font-display">Estación Maestra</CardTitle>
             <CardDescription className="text-sm">
-              Panel de administración · Precios al Día Bodega
+              Panel de administración · Precios al Día
             </CardDescription>
           </div>
         </CardHeader>

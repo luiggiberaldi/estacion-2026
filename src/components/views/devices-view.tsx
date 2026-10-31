@@ -53,7 +53,7 @@ import { cn, formatRelative, formatDate, shortDeviceId } from "@/lib/utils";
 import { getDevices, updateDeviceAlias, requestBackup, sendRemoteReloadCommand } from "@/lib/actions";
 
 import type { Device, DevicePlatform } from "@/lib/types";
-import { productName } from "@/lib/products";
+import { productName, sharesStationCloud } from "@/lib/products";
 import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
@@ -96,7 +96,7 @@ export function DevicesView() {
   const fetchDevices = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const data = await getDevices();
+      const data = await getDevices(productId);
       setDevices(data);
     } catch (err: any) {
       toast({
@@ -111,7 +111,7 @@ export function DevicesView() {
 
   useEffect(() => {
     fetchDevices();
-  }, []);
+  }, [productId]);
 
   const {
     currentPage,
@@ -385,10 +385,10 @@ export function DevicesView() {
                           <DropdownMenuItem onClick={() => handleGenerateLicense(d)}>
                             <KeyRound className="size-4" /> Generar licencia
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRequestBackup(d)}>
+                          <DropdownMenuItem disabled={!sharesStationCloud(productId)} onClick={() => handleRequestBackup(d)}>
                             <Send className="size-4 text-emerald-600" /> Solicitar Backup
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleRemoteReload(d)}>
+                          <DropdownMenuItem disabled={!sharesStationCloud(productId)} onClick={() => handleRemoteReload(d)}>
                             <RotateCw className="size-4 text-sky-500" /> Recargar POS Remoto
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />

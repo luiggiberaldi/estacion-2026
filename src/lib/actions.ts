@@ -696,7 +696,7 @@ export async function sendRemoteReloadCommand(productId: ProductId, deviceId?: s
 // DISPOSITIVOS REGISTRADOS (Lectura de public.account_devices)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getDevices(): Promise<Device[]> {
+export async function getDevices(productId: ProductId = "bodega"): Promise<Device[]> {
   const admin = getSupabaseAdmin();
 
   const { data: dbDevices, error: devErr } = await admin
@@ -705,6 +705,23 @@ export async function getDevices(): Promise<Device[]> {
     .order("created_at", { ascending: false });
 
   if (devErr) throw new Error(`Error al obtener dispositivos: ${devErr.message}`);
+
+  // account_devices no guarda el producto: se toma de la licencia del equipo
+  // (toda caja que se registra crea su fila en licenses con su product_id). Los
+  // equipos sin licencia son de bodega (las cajas antiguas, anteriores al campo).
+  const { data: dbLicenseProducts, error: lpErr } = await admin
+    .from("licenses")
+    .select("device_id, product_id")
+    .not("device_id", "is", null);
+
+  if (lpErr) throw new Error(`Error al obtener el producto de los dispositivos: ${lpErr.message}`);
+
+  const productByDevice = new Map<string, string>(
+    ((dbLicenseProducts || []) as any[]).map((l) => [l.device_id, l.product_id ?? "bodega"])
+  );
+  const devicesOfProduct = (dbDevices || []).filter(
+    (d: any) => (productByDevice.get(d.device_id) ?? "bodega") === productId
+  );
 
   // Obtener licencias para cruzar el nombre de cliente
   const { data: dbCloudLicenses, error: clErr } = await admin
@@ -715,7 +732,7 @@ export async function getDevices(): Promise<Device[]> {
 
   const clMap = new Map(dbCloudLicenses?.map((cl: any) => [cl.device_id, cl]) || []);
 
-  return (dbDevices || []).map((d: any) => {
+  return devicesOfProduct.map((d: any) => {
     const cl = clMap.get(d.device_id) || {};
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
