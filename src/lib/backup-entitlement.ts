@@ -2,11 +2,25 @@
 // la fila de `licenses` leída desde la base operativa en el servidor.
 
 import type { LicenseType } from "@/lib/types";
+import {
+  BACKUP_ELIGIBLE_TYPES,
+  evaluateBackupEligibility,
+  normalizeDeviceId,
+} from "@/lib/licensePolicy";
 
 export const BACKUP_PRODUCT_ID = "bodega";
 
-/** Tipos de licencia con derecho a respaldo remoto (Lite de pago). */
-const ELIGIBLE_TYPES: ReadonlySet<LicenseType> = new Set<LicenseType>(["permanent", "monthly"]);
+/**
+ * Tipos de licencia con derecho a respaldo remoto (planes de pago).
+ * Única fuente de verdad: `licensePolicy.js` (compartido con la caja/POS).
+ */
+const ELIGIBLE_TYPES: ReadonlySet<LicenseType> = new Set<LicenseType>(
+  BACKUP_ELIGIBLE_TYPES as LicenseType[]
+);
+
+// La normalización del device id vive en la política compartida para que la
+// caja y la estación acepten exactamente los mismos identificadores.
+export { normalizeDeviceId };
 
 /** Fila real de `licenses` (esquema de la base operativa: `is_active`, no `status`). */
 export interface LicenseRow {
@@ -20,12 +34,6 @@ export interface LicenseRow {
 export type EntitlementResult =
   | { ok: true; deviceId: string }
   | { ok: false; reason: "no_license" | "wrong_product" | "not_eligible" | "inactive" | "expired" };
-
-/** Normaliza un device id igual que el POS: sin espacios, en mayúsculas. */
-export function normalizeDeviceId(raw: string): string | null {
-  const id = raw.replace(/\s+/g, "").toUpperCase();
-  return id.length >= 8 && id.length <= 64 ? id : null;
-}
 
 /**
  * Decide si `row` (la licencia del dispositivo) permite respaldo remoto ahora mismo.
@@ -42,9 +50,15 @@ export function evaluateBackupEntitlement(
     return { ok: false, reason: "no_license" };
   }
   if (!ELIGIBLE_TYPES.has(row.type)) return { ok: false, reason: "not_eligible" };
-  if (row.is_active !== true) return { ok: false, reason: "inactive" };
-  if (row.expires_at && Date.parse(row.expires_at) <= now.getTime()) {
-    return { ok: false, reason: "expired" };
-  }
-  return { ok: true, deviceId };
+
+  // La regla de vida de la licencia (actividad, vencimientos y período de
+  // gracia) es la MISMA que aplica la caja: vive en licensePolicy.js. Aquí
+  // solo se añade el alcance por producto y por equipo.
+  const eligibility = evaluateBackupEligibility(
+    { type: row.type, isActive: row.is_active, expiresAt: row.expires_at },
+    now.getTime()
+  );
+  if (eligibility.allowed) return { ok: true, deviceId };
+
+  return { ok: false, reason: eligibility.reason === "inactive" ? "inactive" : "expired" };
 }

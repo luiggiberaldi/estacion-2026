@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
 /**
- * Blindaje compartido por los endpoints de backup (/api/backup/complete y
- * /api/backup/relay). El POS (preciosaldia-bodega) los llama cross-origin
+ * Blindaje compartido por los endpoints de backup (/api/backup/relay y
+ * /api/backup/storage/upload). El POS (preciosaldia-bodega) los llama cross-origin
  * desde el navegador sin sesión de usuario, por lo que la autenticación es
  * un shared secret por header (constancia en tiempo constante) y el CORS se
  * restringe a un allowlist de orígenes en vez de `*`.

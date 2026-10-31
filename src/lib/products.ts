@@ -6,6 +6,8 @@
 // El discriminador `product_id` ya existe en la tabla `licenses` de Supabase;
 // este catálogo es la única fuente de verdad del lado de la estación.
 
+import { PRODUCT_PRICES as LICENSE_PRODUCT_PRICES } from "./licensePolicy";
+
 export const PRODUCT_LITE = { id: "bodega", name: "PreciosAlDía Lite", short: "Lite" } as const;
 
 // PRO queda preservado para reactivarlo después, pero no se ofrece en la UI por ahora.
@@ -25,11 +27,13 @@ export function productName(id: ProductId): string {
 }
 
 /**
- * Precios de referencia en USD para el estimado de ingresos del dashboard.
- * Lite conserva los valores históricos ($80 permanente / $15 mensual).
- * TODO(luigi): definir precios oficiales de Pro (permanente y mensualidad).
+ * Precios de venta en USD por producto y plan.
+ *
+ * Única fuente de verdad: `licensePolicy.js` (compartido byte a byte con la
+ * caja/POS). Lite cuesta $100 permanente y $10 mensual; los textos de venta y
+ * el estimado de ingresos del dashboard derivan de aquí (antes la UI anunciaba
+ * $50 y el dashboard contaba $80).
+ *
+ * `pro` queda en 0 mientras el producto esté pausado: no inventar ingresos.
  */
-export const PRODUCT_PRICES: Record<ProductId, { permanent: number; monthly: number }> = {
-  bodega: { permanent: 80, monthly: 15 },
-  pro: { permanent: 0, monthly: 0 },
-};
+export const PRODUCT_PRICES = LICENSE_PRODUCT_PRICES;

@@ -461,3 +461,43 @@ autorización).
 - luigi reportó (con captura) que la vista Mensajes listaba 101 clientes incluyendo "none"/"Nuevo Dispositivo" sin teléfono — ruido inútil porque sin teléfono no se puede enviar nada.
 - `src/components/views/messages-view.tsx`: la lista ahora filtra `licenses` a solo los que tienen `clientPhone` registrado; la búsqueda opera sobre ese subconjunto; la selección por defecto cae en el primer cliente con teléfono; estado vacío distingue "sin resultados de búsqueda" de "ningún cliente tiene teléfono registrado"; subtítulo aclara el filtro.
 - `npx tsc --noEmit` limpio.
+
+---
+
+## 2026-10-24 — Fix reconciliador de notificaciones: solo transiciones, batch único y ciclo de 5 min
+
+Contexto (auditoría de egress del POS, 23-oct): la Estación generó 58.531 POSTs
+a `notifications` en un día (~1 req/s sostenido) para una tabla de 125 filas:
+`ensureEventNotifications()` re-upserteaba ~94 alertas activas una fila por
+request en CADA refresco de la campana (60 s) y el 99,8% eran no-ops.
+Contribuyó a saturar el pool de 10 conexiones de PostgREST (los `Thread killed`).
+
+**Cambios** (`src/lib/notifications.ts`, `src/components/notification-bell.tsx`):
+- **Solo en transición**: el sweep primero lee en UN `SELECT` las claves
+  `(type, ref_id)` ya emitidas y solo escribe lo nuevo. Una condición que ya
+  notificó no genera tráfico; una transición posterior (vencida tras "por
+  vencer") emite con su propia clave.
+- **Batch único**: todas las filas nuevas van en UN solo upsert
+  (`on_conflict=type,ref_id` + `ignore-duplicates`), no una request por fila.
+- **Ciclo de 5 minutos** (`SWEEP_INTERVAL_MS`): el barrido corre como máximo
+  cada 5 min (antes: cada visita de la campana); las llamadas concurrentes
+  comparten el barrido en curso. La campana ahora refresca cada 5 min en lugar
+  de cada 60 s (sigue refrescando al abrir el dropdown).
+- `notify()` (evento puntual "demo creada") conserva su upsert idempotente
+  unitario. Ventanas de dominio intactas: demo por vencer ≤72 h, demo vencida
+  ≤30 días, dispositivos nuevos ≤7 días, respaldos fallidos por solicitud.
+
+Resultado: el reconciliador pasa de ~94 requests/min a ≤2 requests cada 5 min
+(1 SELECT de claves + 1 upsert).
+
+**Tests** (`tests/notifications.test.ts`): batch único omitiendo claves
+existentes, cero escrituras sin transiciones, transición posterior emitida,
+ciclo de 5 min, barrido compartido entre llamadas concurrentes, ventanas de
+dominio y `notify()` puntual.
+
+**Pendiente en producción:** el `REVOKE INSERT, UPDATE` de `notifications` para
+`service_role` (kill switch del 24-oct) sigue activo. Al desplegar este fix hay
+que aplicar el `GRANT` de reversión de
+`supabase/production-drafts/20261024_notifications_revoke_service_role.sql`
+(en el repo del POS), o las escrituras —incluido `markAllRead`— siguen cayendo
+con 42501.

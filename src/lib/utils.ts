@@ -5,10 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Determina si un tipo de licencia es de demostración (demo3, demo7, etc.). */
-export function isDemoType(type?: string | null): boolean {
-  return Boolean(type && type.startsWith("demo"))
-}
+/**
+ * Determina si un tipo de licencia es de demostración (demo3, demo7, etc.).
+ * Única fuente de verdad: `licensePolicy.js` (compartido con la caja/POS).
+ */
+export { isDemoType } from "./licensePolicy"
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

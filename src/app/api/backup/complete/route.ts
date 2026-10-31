@@ -1,64 +1,49 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/supabase';
-import {
-  verifyBackupSecret,
-  unauthorized,
-  corsHeadersFor,
-  handleBackupOptions,
-} from '../_lib/backup-auth';
+import { corsHeadersFor, handleBackupOptions } from '../_lib/backup-auth';
+
+/**
+ * /api/backup/complete — RETIRADO (410 Gone). No escribe en la base.
+ *
+ * Motivo del retiro: este endpoint hacía upsert de `cloud_backups.backup_data`
+ * con SOLO metadatos (size_bytes, product_count, sales_count, customer_count).
+ * Esa columna es donde el POS guarda el payload COMPLETO del respaldo
+ * (contrato BACKUP-001, ver src/hooks/useCloudBackup.js del POS), así que cada
+ * llamada sobrescribía y destruía el respaldo real del dispositivo de forma
+ * irreversible. Los metadatos resumen viven en columnas propias de
+ * `cloud_backups` (supabase_backups_summary_columns.sql), jamás dentro de
+ * `backup_data`.
+ *
+ * El POS actual ya no lo llama: `performBackup` sube por
+ * `uploadCompressedBackupToCloud` (escritura directa en `cloud_backups` o
+ * `/api/backup/relay`) y marca `backup_requests` como `completed` directamente
+ * en Supabase. La ruta se conserva como lápida para los POS antiguos que aún la
+ * llamen: reciben un error claro y accionable y no se toca ningún dato.
+ *
+ * NO reintroducir escritura aquí. Si vuelven a hacer falta metadatos de
+ * respaldo, van en columnas propias, nunca en `backup_data`.
+ */
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function OPTIONS(req: Request) {
   return handleBackupOptions(req);
 }
 
 export async function POST(req: Request) {
-  // Fail-closed: sin BACKUP_SHARED_SECRET configurado (o secreto inválido),
-  // el endpoint rechaza todo. El POS envía el header x-backup-secret.
-  if (!verifyBackupSecret(req)) return unauthorized();
-
-  const cors = corsHeadersFor(req.headers.get('origin'));
-
-  try {
-    const body = await req.json();
-    // driveUrl ya no se persiste: Drive se retiró del flujo de respaldos.
-    const { deviceId, sizeBytes, productCount, salesCount, customerCount } = body;
-
-    if (!deviceId) {
-      return NextResponse.json({ error: 'Falta el ID del dispositivo' }, { status: 400, headers: cors });
+  return NextResponse.json(
+    {
+      ok: false,
+      error:
+        'Endpoint retirado: /api/backup/complete ya no acepta metadatos porque sobrescribía el respaldo real del dispositivo. ' +
+        'Sube el respaldo por /api/backup/storage/upload (con acuse verificado) o por /api/backup/relay.',
+    },
+    {
+      status: 410,
+      headers: {
+        'Cache-Control': 'no-store',
+        ...corsHeadersFor(req.headers.get('origin')),
+      },
     }
-
-    const cleanId = String(deviceId).replace(/\s+/g, '').toUpperCase();
-    const admin = getSupabaseAdmin();
-
-    const metadataPayload = {
-      size_bytes: sizeBytes || 0,
-      product_count: productCount || 0,
-      sales_count: salesCount || 0,
-      customer_count: customerCount || 0,
-      updated_at: new Date().toISOString()
-    };
-
-    // 1. Guardar en cloud_backups usando service_role key (bypassea RLS)
-    const { error: bkpErr } = await admin.from('cloud_backups').upsert({
-      device_id: cleanId,
-      backup_data: metadataPayload,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'device_id' });
-
-    if (bkpErr) {
-      console.error('[API Backup Complete] Error al guardar en cloud_backups:', bkpErr);
-      return NextResponse.json({ error: bkpErr.message }, { status: 500, headers: cors });
-    }
-
-    // 2. Marcar la solicitud como completada en backup_requests
-    await admin.from('backup_requests').update({
-      status: 'completed',
-      completed_at: new Date().toISOString()
-    }).eq('device_id', cleanId);
-
-    return NextResponse.json({ success: true, deviceId: cleanId }, { headers: cors });
-  } catch (err: any) {
-    console.error('[API Backup Complete] Error grave:', err);
-    return NextResponse.json({ error: err.message || 'Error interno del servidor' }, { status: 500, headers: cors });
-  }
+  );
 }

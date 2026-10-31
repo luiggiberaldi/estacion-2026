@@ -14,6 +14,7 @@ import { getLicenses } from "@/lib/actions";
 import type { License } from "@/lib/types";
 import { useProduct } from "@/lib/product-context";
 import { productName, type ProductId } from "@/lib/products";
+import { productPrice } from "@/lib/licensePolicy";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,11 @@ interface Template {
   body: string;
 }
 
+// Precio de venta oficial: única fuente de verdad en licensePolicy.js
+// (compartido con la caja/POS). Antes el número estaba escrito a mano y decía
+// otra cosa que el cálculo de ingresos del dashboard.
+const PERMANENT_PRICE_USD = productPrice("bodega", "permanent");
+
 const TEMPLATES: Template[] = [
   {
     id: "bienvenida",
@@ -49,13 +55,13 @@ const TEMPLATES: Template[] = [
     id: "demo_vence",
     title: "Demo por vencer",
     description: "Recordatorio antes de que expire la prueba",
-    body: "¡Hola {nombre}! 👋\nTe escribo de PreciosAlDía: tu período de prueba vence en {dias} ({vencimiento}).\nSi quieres seguir usando la app sin interrupciones, activa tu licencia permanente por $50 (pago único).\n¿Te la activo?",
+    body: `¡Hola {nombre}! 👋\nTe escribo de PreciosAlDía: tu período de prueba vence en {dias} ({vencimiento}).\nSi quieres seguir usando la app sin interrupciones, activa tu licencia permanente por $${PERMANENT_PRICE_USD} (pago único).\n¿Te la activo?`,
   },
   {
     id: "demo_vencida",
     title: "Demo vencida",
     description: "La prueba terminó, ofrecer licencia",
-    body: "¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta $50 (pago único, sin mensualidades).\n¿La activamos?",
+    body: `¡Hola {nombre}! 👋\nTu prueba de PreciosAlDía terminó el {vencimiento}.\nPara reactivar tu equipo {equipo}, la licencia permanente cuesta $${PERMANENT_PRICE_USD} (pago único, sin mensualidades).\n¿La activamos?`,
   },
   {
     id: "pago_recibido",

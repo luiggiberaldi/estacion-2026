@@ -49,3 +49,8 @@ Thumbs.db
 
 # Copias de respaldo con tokens: nunca al repo
 scratch/backups-prod-*/
+
+# Temporales locales (no versionar)
+scratch/
+*.log
+catalog_names.txt

@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "./supabase";
+import { resolveLicenseState } from "./licensePolicy";
 import { PRODUCT_PRICES, type ProductId } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
@@ -21,15 +22,19 @@ function decompressBackupData(backupData: any): any {
   return backupData;
 }
 
-// Helper: Convierte is_active y expires_at al status del frontend
+// Helper: Convierte is_active y expires_at al status del frontend.
+//
+// Regla ÚNICA de vida de una licencia: licensePolicy.js, el mismo módulo que
+// aplica la caja en campo. Antes esta función aplicaba 5 días de gracia a TODO
+// tipo con vencimiento, así que una demo vencida seguía mostrándose "Activa"
+// mientras la caja ya la había bloqueado (AUDITORIA-LICENCIAS.md LIC-04). La
+// gracia de 5 días ahora es exclusiva de la licencia mensual.
 function deriveStatus(is_active: boolean, expires_at: string | null, type?: string): LicenseStatus {
-  if (type === "registered") return "registered" as LicenseStatus;
-  if (!is_active) return "revoked";
-  if (expires_at) {
-    const graceEnd = new Date(expires_at).getTime() + 5 * 24 * 60 * 60 * 1000;
-    if (Date.now() > graceEnd) return "expired";
-  }
-  return "active";
+  return resolveLicenseState({
+    type: type ?? null,
+    isActive: is_active,
+    expiresAt: expires_at,
+  }).status as LicenseStatus;
 }
 
 // Helper: Determina si el dispositivo se considera "online" (visto hace menos de 5 min)

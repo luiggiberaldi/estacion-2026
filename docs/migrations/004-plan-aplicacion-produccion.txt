@@ -1,0 +1,64 @@
+PLAN DE APLICACIÓN — migración 004 (device_upload_credentials)
+Estado: PLAN. NO EJECUTADO. Requiere aprobación explícita antes del paso 4.
+Base objetivo: sodgzkablshladvbtnes (producción, base operativa).
+Archivo: docs/migrations/004-device-upload-credentials.sql
+
+1. ESTADO PREVIO (solo lectura)
+   - Confirmar que device_upload_credentials NO existe (hoy: 404 vía PostgREST).
+   - Confirmar que device_pairings existe y no cambió desde la última lectura.
+   - Anotar el conteo actual de device_pairings (hoy: 19) para comparar después.
+
+2. RESPALDO
+   - Respaldo completo de la base operativa, verificado y descargable, antes de DDL.
+   - Registrar fecha, hora y el identificador del respaldo.
+
+3. ENSAYO EN STAGING
+   - Aplicar 004 en staging (tdfcpwctvumbdjmifypd) primero.
+   - Ejecutar la prueba de inserción y revocación de abajo.
+   - No avanzar si el ensayo falla.
+
+4. APLICACIÓN EN PRODUCCIÓN (requiere aprobación explícita)
+   - Ejecutar el archivo 004 completo. Es transaccional (BEGIN/COMMIT): si algo falla, no queda nada a medias.
+   - No modificar el archivo en el momento; si hay que cambiarlo, volver al paso 3.
+
+5. VERIFICACIÓN POSTERIOR (solo lectura; ninguna escritura de prueba en producción)
+   a. La tabla existe y tiene las columnas: device_id, secret_hash, created_at, rotated_at, revoked_at.
+   b. RLS habilitado en device_upload_credentials.
+   c. anon y authenticated NO tienen privilegios; service_role sí (select, insert, update).
+   d. Los checks se cumplen: device_id en mayúsculas, longitud 8-64; secret_hash es 64 hex.
+   e. device_pairings: conteo igual al del paso 1 (sin cambios).
+   f. Los RPC pair_monitor_device, generate_pairing_token y unpair_monitor siguen existiendo y sin cambios.
+   g. Un login anónimo o autenticado NO puede leer ni escribir device_upload_credentials.
+   h. Escritura de prueba con service_role: NO se hace en producción durante la verificación de solo lectura.
+      La prueba de escritura se hace solo en staging (ver paso 6). En producción solo se verifican
+      privilegios con consultas de catálogo.
+
+6. PRUEBA DE REVOCACIÓN (en staging antes del paso 4)
+   - Insertar una fila; marcar revoked_at; confirmar que la consulta de credencial activa ya no la devuelve.
+   - Confirmar que otra fila de otro equipo no cambia.
+
+7. REVERSIÓN
+   Riesgo: si ya se emitieron credenciales, revertir deja sin respaldos a esos equipos.
+   Pasos:
+   a. Si la tabla está vacía (sin credenciales emitidas), DROP TABLE public.device_upload_credentials; dentro de BEGIN/COMMIT.
+   b. Si ya hay credenciales, NO borrar. Primero revocar (revoked_at = now()) y reportar a dirección.
+      Borrar solo con aprobación y respaldo confirmado del estado.
+   c. Verificar después que device_pairings sigue con el conteo del paso 1.
+   d. Registrar la reversión y su motivo.
+
+8. CRITERIOS DE ÉXITO
+   - Todas las verificaciones del paso 5 pasan.
+   - device_pairings sin cambios; RPC sin cambios.
+   - La credencial aún no se entrega al POS (eso es un paso posterior, con su propia aprobación).
+
+9. FUERA DE ALCANCE DE ESTE PLAN
+   - Entrega de credenciales al POS.
+   - Cambios en pair_monitor_device.
+   - Retiro del secreto público del relay.
+
+10. ESTADO
+   - Aplicada en producción el 2026-10-13 (verificada: tabla, RLS, privilegios, 19 filas intactas).
+   - RIESGO ACEPTADO por el responsable: sin respaldo completo de producción (plan Free,
+     sin PITR ni respaldos programados). Reversión completa NO disponible.
+     Copia lógica de device_pairings en scratch/backups-prod-2026-10-13/ (ignorada por git).
+   - Pendiente: limpiar 3 filas inactivas con pairing_token en claro (requiere aprobación).

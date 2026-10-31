@@ -1,5 +1,7 @@
 -- 004-device-upload-credentials.sql
--- BORRADOR, NO APLICADO. Aplicar solo en la base operativa tras aprobación explícita.
+-- APLICADA EN PRODUCCIÓN el 2026-10-13 (sodgzkablshladvbtnes), fuera del historial de migraciones:
+-- la tabla existe con este esquema, RLS, 0 filas al verificar y sin privilegios para anon/authenticated.
+-- Staging (tdfcpwctvumbdjmifypd) tiene la misma tabla. No volver a ejecutar sobre una base que ya la tenga.
 -- Guarda solo el SHA-256 del secreto por dispositivo. Ver
 -- docs/plans/2026-10-13-pos-device-credential.md.
 

@@ -50,7 +50,8 @@ export function NotificationBell({ onSeeAll }: { onSeeAll: () => void }) {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 60_000);
+    // Ciclo de 5 min: igual que SWEEP_INTERVAL_MS del reconciliador de eventos.
+    const id = setInterval(refresh, 5 * 60_000);
     return () => clearInterval(id);
   }, [refresh]);
 

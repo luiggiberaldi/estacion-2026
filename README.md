@@ -35,7 +35,7 @@ estacion-maestra/
 │   └── upload-images.cjs
 ├── src/
 │   ├── app/
-│   │   ├── api/backup/complete/  # Endpoint POST para el POS (metadata de backups)
+│   │   ├── api/backup/complete/  # RETIRADO (410): sobrescribía el respaldo real
 │   │   ├── globals.css           # Design tokens OKLCH
 │   │   ├── layout.tsx            # Fonts: Instrument Serif + Work Sans
 │   │   └── page.tsx              # Entry point (router auth)
@@ -80,16 +80,21 @@ BACKUP_SHARED_SECRET=<hex de 32+ bytes, debe coincidir con VITE_ESTACION_BACKUP_
 # BACKUP_ALLOWED_ORIGINS=<origins extra separados por coma para CORS>
 ```
 
-Los endpoints `/api/backup/complete` y `/api/backup/relay` exigen el header
-`x-backup-secret` (comparación en tiempo constante; fail-closed si la variable
-no está configurada) y aplican CORS solo a orígenes del allowlist
-(`estacion-2026.vercel.app`, `localhost:3000/5173/4173` y los de
-`BACKUP_ALLOWED_ORIGINS`).
+El endpoint `/api/backup/relay` exige el header `x-backup-secret` (comparación en
+tiempo constante; fail-closed si la variable no está configurada) y aplica CORS
+solo a orígenes del allowlist (`estacion-2026.vercel.app`,
+`localhost:3000/5173/4173` y los de `BACKUP_ALLOWED_ORIGINS`).
+`/api/backup/storage/upload` exige además la credencial por dispositivo
+(`x-device-credential`).
 
-**Retiro de `/api/backup/complete` (pendiente):** no retirar hasta que (1) el POS
-suba respaldos por `/api/backup/storage/upload` y reciba acuse verificado y (2)
-los POS antiguos que aún llaman a `complete` hayan dejado de usarse. El POS actual
-ya no lo llama. Mientras tanto la ruta sigue activa y fail-closed por secreto.
+**`/api/backup/complete` está RETIRADO (410 Gone):** hacía upsert de
+`cloud_backups.backup_data` con solo metadatos y por eso sobrescribía el payload
+completo del respaldo que el POS guarda en esa misma columna (contrato
+BACKUP-001). Ahora responde `410` sin tocar la base; los POS antiguos que aún lo
+llamen reciben un error claro y se marcan como fallidos, sin pérdida de datos.
+Los metadatos resumen van en columnas propias de `cloud_backups`
+(`supabase_backups_summary_columns.sql`), nunca dentro de `backup_data`.
+**No reintroducir escritura en esa ruta.**
 
 Tablas utilizadas: `licenses`, `cloud_licenses`, `cloud_backups`, `backup_requests`,
 `account_devices`, `supervisor_commands` (comandos remotos de recarga hacia el POS),
