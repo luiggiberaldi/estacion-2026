@@ -1,0 +1,3 @@
+# licensePolicy.js debe ser byte a byte igual a la copia del POS (su SHA-256 está
+# anclado en tests/licensePolicy.test.js): siempre con saltos de línea LF.
+src/lib/licensePolicy.js text eol=lf
