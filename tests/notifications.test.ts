@@ -62,6 +62,9 @@ vi.mock('@/lib/supabase', () => {
   return { getSupabaseAdmin: () => ({ from: (table: string) => builderFor(table) }) };
 });
 
+// Las acciones exigen sesión de administrador; en los tests hay una sesión válida.
+vi.mock('@/lib/require-admin', () => ({ requireAdmin: async () => 'admin' }));
+
 // Como el getLicenses real, el simulado filtra por producto: las fixtures
 // (h.getLicenses) son licencias de Lite ('bodega'), salvo que un test defina
 // h.licensesByProduct para otro producto (p. ej. Farmacia).

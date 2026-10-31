@@ -3,6 +3,7 @@
 import { getSupabaseAdmin } from "./supabase";
 import { isDemoType } from "./utils";
 import { AVAILABLE_PRODUCTS, type ProductId } from "./products";
+import { requireAdmin } from "./require-admin";
 
 export type NotificationType =
   | "demo_created"
@@ -67,6 +68,7 @@ export async function notify(
   refId?: string | null,
   productId?: ProductId | null
 ): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     const { error } = await admin.from("notifications").upsert(
@@ -105,6 +107,7 @@ export async function notify(
  * completo cuesta ≤2 requests cada 5 minutos (1 SELECT de claves + 1 upsert).
  */
 export async function ensureEventNotifications(): Promise<void> {
+  await requireAdmin();
   if (sweepInFlight) return sweepInFlight;
   const now = Date.now();
   if (now - lastSweepStartedAt < SWEEP_INTERVAL_MS) return;
@@ -256,6 +259,7 @@ async function collectPendingNotifications(now: number): Promise<PendingNotifica
 }
 
 export async function getNotifications(limit = 50): Promise<AppNotification[]> {
+  await requireAdmin();
   await ensureEventNotifications();
   try {
     const admin = getSupabaseAdmin();
@@ -272,6 +276,7 @@ export async function getNotifications(limit = 50): Promise<AppNotification[]> {
 }
 
 export async function getUnreadCount(): Promise<number> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     const { count, error } = await admin
@@ -286,6 +291,7 @@ export async function getUnreadCount(): Promise<number> {
 }
 
 export async function markAllRead(): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     await admin
@@ -298,6 +304,7 @@ export async function markAllRead(): Promise<void> {
 }
 
 export async function markRead(id: string): Promise<void> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     await admin

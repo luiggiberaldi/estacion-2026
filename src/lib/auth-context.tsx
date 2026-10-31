@@ -17,22 +17,31 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const defaultAdminUser: AdminSessionUser = {
-  email: "admin@preciosaldia.com",
-  name: "Administrador",
-  role: "superadmin",
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AdminSessionUser | null>(defaultAdminUser);
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<AdminSessionUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const login = useCallback(async () => {
-    setUser(defaultAdminUser);
-    return { ok: true };
+  useEffect(() => {
+    getSessionUser()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const login = useCallback(async (pin: string) => {
+    const res = await loginAction(pin);
+    if (res.ok) {
+      try {
+        setUser(await getSessionUser());
+      } catch {
+        setUser(null);
+      }
+    }
+    return res;
   }, []);
 
   const logout = useCallback(() => {
+    logoutAction().catch(() => {});
     setUser(null);
   }, []);
 

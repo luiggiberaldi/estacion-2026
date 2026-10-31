@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "./supabase";
+import { requireAdmin } from "./require-admin";
 
 export interface Visit {
   id: string;
@@ -34,6 +35,7 @@ function mapRow(r: any): Visit {
 
 /** Últimas visitas, más recientes primero. [] si la tabla aún no existe. */
 export async function getVisits(limit = 100): Promise<Visit[]> {
+  await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
     const { data, error } = await admin
@@ -55,6 +57,7 @@ export interface VisitStats {
 
 /** Ceros si la tabla aún no existe. "Hoy" en America/Caracas. */
 export async function getVisitStats(): Promise<VisitStats> {
+  await requireAdmin();
   const fallback = { today: 0, total: 0 };
   try {
     const admin = getSupabaseAdmin();
