@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import { resolveLicenseState } from "./licensePolicy";
-import { PRODUCT_PRICES, type ProductId } from "./products";
+import { PRODUCT_PRICES, type ProductId, isProductId, productName } from "./products";
 import type { License, Demo, Backup, Device, DashboardStats, LicenseType, LicenseStatus } from "./types";
 import { isDemoType } from "./utils";
 import { notify } from "./notifications";
@@ -188,20 +188,43 @@ export async function createOrUpdateLicense(licenseData: {
 
   const isActive = licenseData.status ? (licenseData.status === "active") : (licenseData.type !== "revoked");
 
-  // Limpiar cualquier fila duplicada de otro producto para este mismo deviceId para prevenir colisión de clave única
-  await admin
+  // Un equipo tiene licencia de UN solo producto. Antes se borraba en silencio cualquier
+  // fila que no fuera de 'bodega' (LIC-01) o la de otro equipo con el mismo código (LIC-02):
+  // con varios productos eso destruía licencias ajenas. Ahora se detiene y se explica;
+  // no se borra nada.
+  const { data: otherProductLic, error: otherErr } = await admin
     .from("licenses")
-    .delete()
+    .select("product_id")
     .eq("device_id", deviceId)
-    .neq("product_id", "bodega");
+    .neq("product_id", productId)
+    .limit(1)
+    .maybeSingle();
+  if (otherErr) throw new Error(`Error al verificar el producto del equipo: ${otherErr.message}`);
+  if (otherProductLic) {
+    const other = isProductId(otherProductLic.product_id)
+      ? productName(otherProductLic.product_id)
+      : String(otherProductLic.product_id);
+    throw new Error(
+      `Este equipo ya tiene una licencia de ${other}. Revisa que elegiste el producto correcto; ` +
+        `si de verdad cambia de producto, elimina primero esa licencia.`
+    );
+  }
 
-  // Si otra fila en licenses tuviese este mismo código único asignado erróneamente, removerla
   if (code && !code.startsWith("SIN-LICENCIA-")) {
-    await admin
+    const { data: clash, error: clashErr } = await admin
       .from("licenses")
-      .delete()
+      .select("device_id")
       .eq("code", code)
-      .neq("device_id", deviceId);
+      .neq("device_id", deviceId)
+      .limit(1)
+      .maybeSingle();
+    if (clashErr) throw new Error(`Error al verificar el código de activación: ${clashErr.message}`);
+    if (clash) {
+      throw new Error(
+        `El código ${code} ya pertenece al equipo ${clash.device_id}. Revisa el ID del equipo; ` +
+          `no se modificó ninguna licencia.`
+      );
+    }
   }
 
   // 1. Escribir en la tabla 'licenses' (para verificación de la app bodega)
