@@ -1,4 +1,4 @@
-// src/middleware.ts — Puerta de autenticación de la Estación.
+// src/proxy.ts — Puerta de autenticación de la Estación (antes middleware.ts; Next 16 lo renombró a "proxy").
 //
 // - `/api/backup/*`: PÚBLICO para el middleware. Son los endpoints que los POS
 //   en campo consumen con su propio secreto (`x-backup-secret`, fail-closed
@@ -15,7 +15,7 @@ import { verifySession, sessionCookieName } from "./lib/session";
 
 const STATIC_RE = /\.(svg|png|jpg|jpeg|gif|webp|ico|json|webmanifest|txt|xml)$/i;
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Rutas POS / estáticas / beacon de visitas: no piden sesión admin.

@@ -1,8 +1,18 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import { securityHeaders } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Cabeceras de seguridad para todas las rutas (ver src/lib/security-headers.ts).
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders(process.env.NODE_ENV === "production"),
+      },
+    ];
+  },
   // Evita que Turbopack escoja una raíz incorrecta por lockfiles duplicados fuera del proyecto
   turbopack: {
     root: path.join(import.meta.dirname),

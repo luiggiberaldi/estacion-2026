@@ -2,6 +2,7 @@
 // Lee la fila activa (revoked_at is null). Si la tabla no existe o hay error, devuelve
 // null: la verificación falla cerrada.
 
+import "server-only";
 import type { DeviceCredentialStore } from "@/lib/device-credential";
 import { getSupabaseAdmin } from "@/lib/supabase";
 

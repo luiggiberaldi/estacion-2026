@@ -8,6 +8,7 @@
 //   NUBE_SUPABASE_URL               p. ej. https://hfuzyauiefhllohonvim.supabase.co (nube-pruebas)
 //   NUBE_SUPABASE_SERVICE_ROLE_KEY  llave service_role de ese proyecto
 
+import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export function nubeConfigured(): boolean {
