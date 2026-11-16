@@ -5,6 +5,7 @@
 // para probar PINes sin pasar por el freno de intentos, así que estas
 // funciones solo se llaman desde acciones que ya exigen sesión o desde el login.
 
+import "server-only";
 import { cookies } from "next/headers";
 import { createHash, timingSafeEqual } from "node:crypto";
 import {

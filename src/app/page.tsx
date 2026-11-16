@@ -31,7 +31,7 @@ function AdminAppInternal() {
     );
   }
 
-  // La autenticación la exige el middleware (src/middleware.ts); esta puerta
+  // La autenticación la exige el proxy (src/proxy.ts); esta puerta
   // es defensa en profundidad por si el middleware se desactiva.
   if (!isAuthenticated) {
     return <LoginView />;

@@ -7,6 +7,7 @@
 // por defecto de licensePolicy.js y `available` queda en false: la vista de
 // Ajustes lo explica y no deja guardar.
 
+import "server-only";
 import { getSupabaseAdmin } from "./supabase";
 import { defaultSettings, mergeWithDefaults, type StationSettings } from "./settings-schema";
 

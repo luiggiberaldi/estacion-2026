@@ -1,6 +1,7 @@
 // Dependencias reales del flujo de upload: RPC del proyecto de backups y
 // Storage del bucket privado. Solo servidor; la service-role nunca sale de aquí.
 
+import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readBackupStorageConfig } from "@/lib/backup-storage";
 import type { UploadDeps } from "@/lib/backup-upload";
