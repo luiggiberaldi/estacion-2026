@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Smartphone,
   Globe,
@@ -93,19 +93,23 @@ export function DevicesView() {
   const [aliasValue, setAliasValue] = useState("");
   const [savingAlias, setSavingAlias] = useState(false);
 
+  const seqRef = useRef(0);
   const fetchDevices = async (showLoading = true) => {
+    const seq = ++seqRef.current;
     if (showLoading) setIsLoading(true);
     try {
       const data = await getDevices(productId);
+      if (seq !== seqRef.current) return;
       setDevices(data);
     } catch (err: any) {
+      if (seq !== seqRef.current) return;
       toast({
         title: "Error al cargar dispositivos",
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (seq === seqRef.current) setIsLoading(false);
     }
   };
 

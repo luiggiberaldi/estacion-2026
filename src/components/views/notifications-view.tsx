@@ -35,6 +35,7 @@ const TYPE_META: Record<NotificationType, { label: string; icon: LucideIcon; ton
   demo_expiring: { label: "Demo por vencer", icon: Clock, tone: "bg-amber-500/15 text-amber-600" },
   demo_expired: { label: "Demo vencida", icon: TimerOff, tone: "bg-destructive/15 text-destructive" },
   backup_failed: { label: "Respaldo fallido", icon: DatabaseBackup, tone: "bg-destructive/15 text-destructive" },
+  backup_missing: { label: "Sin respaldo", icon: DatabaseBackup, tone: "bg-warning/15 text-warning" },
   device_new: { label: "Dispositivo nuevo", icon: Smartphone, tone: "bg-emerald-500/15 text-emerald-600" },
 };
 
@@ -81,8 +82,8 @@ export function NotificationsView() {
     try {
       await markRead(n.id);
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x)));
-    } catch {
-      /* se ignora */
+    } catch (err: any) {
+      toast({ title: "No se pudo marcar como leída", description: err.message || "Error de servidor", variant: "destructive" });
     }
   };
 
@@ -91,6 +92,8 @@ export function NotificationsView() {
     try {
       await markAllRead();
       setItems((prev) => prev.map((x) => ({ ...x, readAt: x.readAt ?? new Date().toISOString() })));
+    } catch (err: any) {
+      toast({ title: "No se pudieron marcar como leídas", description: err.message || "Error de servidor", variant: "destructive" });
     } finally {
       setMarkingAll(false);
     }
