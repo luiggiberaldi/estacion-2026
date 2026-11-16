@@ -77,6 +77,7 @@ import { useSettings } from "@/lib/settings-context";
 import { AVAILABLE_PRODUCTS, PRODUCT_LITE, productName, type ProductId } from "@/lib/products";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
+import { looksLikeNubeId } from "@/lib/nube-id";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes y helpers de presentación
@@ -426,6 +427,14 @@ export function LicensesView() {
   async function handleGenerate() {
     if (!formDeviceId.trim()) {
       toast({ title: "Falta el ID del dispositivo", variant: "destructive" });
+      return;
+    }
+    if (looksLikeNubeId(formDeviceId)) {
+      toast({
+        title: "Es un equipo de Precios al Día Nube",
+        description: "La licencia de la Nube es de la cuenta. Ábrela en la pestaña Nube → Cuentas Nube y pega ahí el ID.",
+        variant: "destructive",
+      });
       return;
     }
     setIsSubmitting(true);
@@ -911,6 +920,11 @@ export function LicensesView() {
                   {isScanning ? <Camera className="size-4 animate-pulse" /> : <QrCode className="size-4" />}
                 </Button>
               </div>
+              {looksLikeNubeId(formDeviceId) && (
+                <p className="text-xs text-[#2b59c3]">
+                  Este ID es de Precios al Día Nube. Su licencia es de la cuenta: adminístrala en la pestaña Nube.
+                </p>
+              )}
             </div>
 
             {isScanning && (

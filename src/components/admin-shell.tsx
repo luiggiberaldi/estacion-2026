@@ -17,6 +17,8 @@ import {
   MessageSquare,
   Settings,
   AlertTriangle,
+  Cloud,
+  Store,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { logoutAction } from "@/lib/auth-actions";
@@ -37,7 +39,9 @@ export type AdminView =
   | "messages"
   | "notifications"
   | "visits"
-  | "settings";
+  | "settings"
+  | "nube-accounts"
+  | "nube-devices";
 
 interface NavItem {
   id: AdminView;
@@ -59,6 +63,15 @@ const NAV_ITEMS: NavItem[] = [
   { id: "settings", label: "Ajustes", icon: Settings, description: "Precios, plazos, PIN y plantillas" },
 ];
 
+// Precios al Día Nube: licencia por cuenta y equipos PDN-, en su propio Supabase.
+const NAV_NUBE: NavItem[] = [
+  { id: "nube-accounts", label: "Cuentas Nube", icon: Store, description: "Negocios, licencia, usuarios y equipos" },
+  { id: "nube-devices", label: "Equipos Nube", icon: Smartphone, description: "Cajas y consultas PDN- conectadas" },
+  { id: "settings", label: "Ajustes", icon: Settings, description: "Precios, plazos, PIN y plantillas" },
+];
+
+export const STATION_VERSION = "v3.0";
+
 interface AdminShellProps {
   activeView: AdminView;
   onViewChange: (v: AdminView) => void;
@@ -67,14 +80,15 @@ interface AdminShellProps {
 
 export function AdminShell({ activeView, onViewChange, children }: AdminShellProps) {
   const { user, logout } = useAuth();
-  const { productId, setProductId } = useProduct();
+  const { productId, setProductId, system, setSystem } = useProduct();
+  const navItems = system === "nube" ? NAV_NUBE : NAV_ITEMS;
   const handleLogout = async () => {
     await logoutAction();
     logout();
     window.location.assign("/login");
   };
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const activeItem = NAV_ITEMS.find((n) => n.id === activeView);
+  const activeItem = navItems.find((n) => n.id === activeView);
   // Aviso persistente mientras el PIN sea uno trivial (p. ej. 000000).
   const [weakPin, setWeakPin] = useState(false);
   useEffect(() => {
@@ -100,7 +114,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-display text-base text-sidebar-foreground">Estación Maestra</span>
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">v2.0</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{STATION_VERSION}</span>
             </div>
           </div>
 
@@ -108,32 +122,60 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
               Pro permanece en el catálogo/código, pausado. */}
           <div className="border-b border-sidebar-border px-4 py-3">
             <div className="flex gap-1" role="tablist" aria-label="Producto">
-              {AVAILABLE_PRODUCTS.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={productId === product.id}
-                  onClick={() => setProductId(product.id)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                    productId === product.id
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent"
-                  )}
-                >
-                  {product.short}
-                </button>
-              ))}
+              {AVAILABLE_PRODUCTS.map((product) => {
+                const selected = system === "clasico" && productId === product.id;
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => {
+                      setProductId(product.id);
+                      if (system !== "clasico") {
+                        setSystem("clasico");
+                        onViewChange("dashboard");
+                      }
+                    }}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                      selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent"
+                    )}
+                  >
+                    {product.short}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={system === "nube"}
+                onClick={() => {
+                  if (system !== "nube") {
+                    setSystem("nube");
+                    onViewChange("nube-accounts");
+                  }
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                  system === "nube"
+                    ? "bg-[#2b59c3] text-white"
+                    : "bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent"
+                )}
+              >
+                <Cloud className="size-3.5" /> Nube
+              </button>
             </div>
             <p className="mt-2 px-1 text-[10px] leading-tight text-muted-foreground">
-              {productName(productId)}
+              {system === "nube" ? "Precios al Día Nube" : productName(productId)}
             </p>
           </div>
 
           {/* Nav */}
           <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-            {NAV_ITEMS.map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeView === item.id;
               return (

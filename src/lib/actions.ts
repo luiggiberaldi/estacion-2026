@@ -11,6 +11,7 @@ import { requireAdmin } from "./require-admin";
 import { loadSettings } from "./settings-store";
 import { termsFor } from "./settings-schema";
 import { LICENSE_TYPES } from "./licensePolicy";
+import { looksLikeNubeId } from "./nube-id";
 
 function decompressBackupData(backupData: any): any {
   if (backupData && backupData.compressed) {
@@ -202,6 +203,10 @@ export async function createOrUpdateLicense(licenseData: {
     throw new Error("El ID del dispositivo es obligatorio.");
   }
   assertDeviceIdArg(licenseData.deviceId);
+  if (looksLikeNubeId(licenseData.deviceId)) {
+    // Un equipo de la Nube no tiene licencia propia: la licencia es de su cuenta.
+    throw new Error("Ese ID es de Precios al Día Nube: su licencia se cambia en la pestaña Nube (Cuentas Nube).");
+  }
   assertLicenseType(licenseData.type);
   const admin = getSupabaseAdmin();
   const productId: ProductId = licenseData.productId ?? "bodega";
