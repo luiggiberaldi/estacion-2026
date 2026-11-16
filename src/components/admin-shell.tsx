@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/lib/utils";
 import { getAdminPinStatus } from "@/lib/settings-actions";
+import { useSettings } from "@/lib/settings-context";
 
 export type AdminView =
   | "dashboard"
@@ -82,6 +83,7 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
   const { user, logout } = useAuth();
   const { productId, setProductId, system, setSystem } = useProduct();
   const navItems = system === "nube" ? NAV_NUBE : NAV_ITEMS;
+  const { available: settingsAvailable, loading: settingsLoading } = useSettings();
   const handleLogout = async () => {
     await logoutAction();
     logout();
@@ -278,6 +280,15 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
                 <strong>El PIN de acceso es muy fácil de adivinar.</strong> Toca aquí para cambiarlo en Ajustes.
               </span>
             </button>
+          )}
+          {!settingsLoading && !settingsAvailable && activeView !== "settings" && (
+            <div className="mb-4 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <span>
+                <strong>No se pudieron leer los Ajustes.</strong> Se están usando precios y plazos por defecto, que pueden
+                no coincidir con los que configuraste. Recarga la página; si sigue, revisa la base.
+              </span>
+            </div>
           )}
           {children}
         </main>

@@ -130,9 +130,22 @@ function expiresAtFor(type: LicenseType, demoDays: number): string | null {
   return null;
 }
 
+// La vida de la licencia la decide el servidor (licensePolicy.js, el mismo módulo
+// que aplica la caja): aquí NO se recalcula con la fecha. Así una mensualidad en
+// sus días de gracia sigue "activa" y una demo/mensual sin fecha sale "expirada",
+// igual que en la caja.
 function isLicenseExpired(lic: License) {
-  if (!lic.expiresAt) return false;
-  return Date.now() > new Date(lic.expiresAt).getTime();
+  return lic.status === "expired";
+}
+
+/** Mensualidad vencida que aún funciona por los días de gracia. */
+function isInGrace(lic: License) {
+  return (
+    lic.status === "active" &&
+    lic.type === "monthly" &&
+    !!lic.expiresAt &&
+    Date.now() >= new Date(lic.expiresAt).getTime()
+  );
 }
 
 function statusBadge(lic: License): {
@@ -144,6 +157,9 @@ function statusBadge(lic: License): {
 
   if (isLicenseExpired(lic))
     return { label: "Expirada", className: "bg-destructive/15 text-destructive border-transparent" };
+
+  if (isInGrace(lic))
+    return { label: "En gracia", className: "bg-warning/15 text-warning border-transparent" };
 
   // Para demos, solo "Por expirar" si queda menos de 24 horas. Para suscripciones, 7 días.
   const isDemoType = isDemo(lic.type);
@@ -186,7 +202,7 @@ export function LicensesView() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [detailLic, setDetailLic] = useState<License | null>(null);
   const [confirm, setConfirm] = useState<
-    { lic: License; action: "revoke" | "delete" } | null
+    { lic: License; action: "revoke" | "delete" | "demo" | "permanent" } | null
   >(null);
   const [changeTypeLic, setChangeTypeLic] = useState<License | null>(null);
   const [newLicType, setNewLicType] = useState<LicenseType>("permanent");
@@ -328,19 +344,23 @@ export function LicensesView() {
     }
   }, [generateOpen]);
 
+  const seqRef = useRef(0);
   const fetchLicenses = async (showLoading = true) => {
+    const seq = ++seqRef.current;
     if (showLoading) setIsLoading(true);
     try {
       const data = await getLicenses(productId);
+      if (seq !== seqRef.current) return;
       setLicenses(data);
     } catch (err: any) {
+      if (seq !== seqRef.current) return;
       toast({
         title: "Error al cargar licencias",
         description: err.message || "Error desconocido",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (seq === seqRef.current) setIsLoading(false);
     }
   };
 
@@ -541,6 +561,14 @@ export function LicensesView() {
       setConfirm({ lic, action: "delete" });
       return;
     }
+    if (action === "demo" || action === "permanent") {
+      setConfirm({ lic, action });
+      return;
+    }
+  }
+
+  // Ejecuta "Activar demo" / "Hacer permanente" ya confirmados.
+  async function applyQuickChange(action: "demo" | "permanent", lic: License) {
     if (action === "demo") {
       setIsLoading(true);
       try {
@@ -594,6 +622,11 @@ export function LicensesView() {
   async function handleConfirm() {
     if (!confirm) return;
     const { lic, action } = confirm;
+    if (action === "demo" || action === "permanent") {
+      setConfirm(null);
+      await applyQuickChange(action, lic);
+      return;
+    }
     setIsLoading(true);
     try {
       if (action === "revoke") {
@@ -820,9 +853,13 @@ export function LicensesView() {
                                    <DropdownMenuItem
                                      onClick={() => {
                                        setChangeTypeLic(lic);
-                                       // Reactivar: permanente (la mensualidad ya no existe)
-                                       setNewLicType("permanent");
-                                       setNewDays(30);
+                                       // Reactivar con el tipo que tenía; solo si no se sabe, permanente.
+                                       const prod = (lic.productId as ProductId) ?? productId;
+                                       const prior = (["permanent", "monthly", "demo3", "demo7"] as const).includes(lic.type as never)
+                                         ? clampTypeForProduct(lic.type, prod)
+                                         : "permanent";
+                                       setNewLicType(prior);
+                                       setNewDays(prior === "demo3" ? demoDays : 30);
                                      }}
                                    >
                                      <KeyRound className="size-4" /> Reactivar licencia
@@ -1216,11 +1253,19 @@ export function LicensesView() {
             <AlertDialogTitle>
               {confirm?.action === "revoke"
                 ? "¿Revocar esta licencia?"
-                : "¿Eliminar este dispositivo?"}
+                : confirm?.action === "demo"
+                  ? "¿Cambiar a demo?"
+                  : confirm?.action === "permanent"
+                    ? "¿Hacer permanente esta licencia?"
+                    : "¿Eliminar este dispositivo?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.action === "revoke"
                 ? `El dispositivo ${confirm?.lic.alias ?? confirm?.lic.deviceId} perderá acceso inmediatamente. Esta acción puede revertirse.`
+                : confirm?.action === "demo"
+                  ? `${confirm?.lic.alias ?? confirm?.lic.deviceId} pasará a una demo de ${demoDays} días y, al vencer, perderá el acceso.`
+                  : confirm?.action === "permanent"
+                    ? `${confirm?.lic.alias ?? confirm?.lic.deviceId} quedará con licencia permanente, sin vencimiento. Úsalo solo si el pago está confirmado.`
                 : `Se eliminará permanentemente el registro de ${confirm?.lic.alias ?? confirm?.lic.deviceId}. Esta acción no puede deshacerse.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1229,12 +1274,12 @@ export function LicensesView() {
             <AlertDialogAction
               onClick={handleConfirm}
               className={cn(
-                confirm?.action === "revoke"
-                  ? "bg-warning text-warning-foreground hover:bg-warning/90"
-                  : "bg-destructive text-white hover:bg-destructive/90"
+                confirm?.action === "delete"
+                  ? "bg-destructive text-white hover:bg-destructive/90"
+                  : "bg-warning text-warning-foreground hover:bg-warning/90"
               )}
             >
-              {confirm?.action === "revoke" ? "Revocar" : "Eliminar"}
+              {confirm?.action === "revoke" ? "Revocar" : confirm?.action === "delete" ? "Eliminar" : "Confirmar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

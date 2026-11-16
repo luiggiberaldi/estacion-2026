@@ -30,6 +30,7 @@ const TYPE_ICON: Record<NotificationType, { icon: LucideIcon; tone: string }> = 
   demo_expiring: { icon: Clock, tone: "bg-amber-500/15 text-amber-600" },
   demo_expired: { icon: TimerOff, tone: "bg-destructive/15 text-destructive" },
   backup_failed: { icon: DatabaseBackup, tone: "bg-destructive/15 text-destructive" },
+  backup_missing: { icon: DatabaseBackup, tone: "bg-warning/15 text-warning" },
   device_new: { icon: Smartphone, tone: "bg-emerald-500/15 text-emerald-600" },
 };
 
@@ -60,9 +61,14 @@ export function NotificationBell({ onSeeAll }: { onSeeAll: () => void }) {
   }, [open, refresh]);
 
   const handleMarkAll = async () => {
-    await markAllRead();
-    setUnread(0);
-    setRecent((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })));
+    try {
+      await markAllRead();
+      setUnread(0);
+      setRecent((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })));
+    } catch {
+      // No se guardó: se vuelve a leer el estado real en vez de aparentar éxito.
+      refresh();
+    }
   };
 
   return (

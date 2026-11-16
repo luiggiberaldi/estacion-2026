@@ -10,6 +10,7 @@ export type NotificationType =
   | "demo_expiring"
   | "demo_expired"
   | "backup_failed"
+  | "backup_missing"
   | "device_new";
 
 export interface AppNotification {
@@ -216,7 +217,7 @@ async function collectPendingNotifications(now: number): Promise<PendingNotifica
 
     // Respaldos fallidos (los marca el propio POS en backup_requests).
     try {
-      const failed = await getFailedBackupRequests();
+      const failed = await getFailedBackupRequests("bodega");
       for (const f of failed) {
         const label = f.alias || f.deviceId;
         pending.push({
@@ -229,6 +230,27 @@ async function collectPendingNotifications(now: number): Promise<PendingNotifica
       }
     } catch {
       /* tabla/columna aún inexistente: se ignora */
+    }
+
+    // Licencias de pago sin respaldo reciente (48 h). Una notificación por
+    // episodio: la clave lleva la fecha del último respaldo (o "nunca").
+    try {
+      const { getBackupHealth } = await import("./actions");
+      const stale = await getBackupHealth("bodega");
+      for (const s of stale) {
+        const label = s.alias || s.deviceId;
+        pending.push({
+          type: "backup_missing",
+          title: `Sin respaldo · ${label}`,
+          body: s.lastBackupAt
+            ? `La licencia ${s.type} de ${s.deviceId} no respalda desde ${s.lastBackupAt.slice(0, 10)}.`
+            : `La licencia ${s.type} de ${s.deviceId} nunca ha subido un respaldo.`,
+          refId: `backup_missing:${s.deviceId}:${s.lastBackupAt ?? "nunca"}`,
+          productId: "bodega",
+        });
+      }
+    } catch {
+      /* sin datos de salud de respaldos: se omite en este ciclo */
     }
 
     // Dispositivos nuevos (últimos 7 días).
@@ -294,12 +316,15 @@ export async function markAllRead(): Promise<void> {
   await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
-    await admin
+    const { error } = await admin
       .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .is("read_at", null);
-  } catch {
-    /* tabla inexistente: nada que marcar */
+    // Supabase no lanza: devuelve el error. Tabla inexistente = nada que marcar;
+    // cualquier otro (p. ej. permisos) se informa en vez de aparentar éxito.
+    if (error && error.code !== "42P01") throw new Error(`No se pudieron marcar como leídas: ${error.message}`);
+  } catch (e) {
+    if ((e as Error).message?.startsWith("No se pudieron")) throw e;
   }
 }
 
@@ -307,12 +332,13 @@ export async function markRead(id: string): Promise<void> {
   await requireAdmin();
   try {
     const admin = getSupabaseAdmin();
-    await admin
+    const { error } = await admin
       .from("notifications")
       .update({ read_at: new Date().toISOString() })
       .eq("id", id)
       .is("read_at", null);
-  } catch {
-    /* se ignora */
+    if (error && error.code !== "42P01") throw new Error(`No se pudo marcar como leída: ${error.message}`);
+  } catch (e) {
+    if ((e as Error).message?.startsWith("No se pudo")) throw e;
   }
 }

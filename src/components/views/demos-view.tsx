@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Clock,
   CalendarClock,
@@ -92,19 +92,23 @@ export function DemosView() {
   const [confirmConvert, setConfirmConvert] = useState<Demo | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
+  const seqRef = useRef(0);
   const fetchDemos = async (showLoading = true) => {
+    const seq = ++seqRef.current;
     if (showLoading) setIsLoading(true);
     try {
       const data = await getDemos(productId);
+      if (seq !== seqRef.current) return;
       setDemos(data);
     } catch (err: any) {
+      if (seq !== seqRef.current) return;
       toast({
         title: "Error al cargar demos",
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (seq === seqRef.current) setIsLoading(false);
     }
   };
 
@@ -113,14 +117,11 @@ export function DemosView() {
   }, [productId]);
 
   const filtered = useMemo(() => {
-    const now = Date.now();
     return demos
       .filter((d) => {
         const isRevoked = d.status === "revoked";
-        const isExpired =
-          !isRevoked && d.expiresAt
-            ? new Date(d.expiresAt).getTime() < now
-            : false;
+        // El servidor decide (licensePolicy.js): una demo sin fecha cuenta como vencida.
+        const isExpired = d.status === "expired";
         if (filter === "all") return true;
         if (filter === "revoked") return isRevoked;
         if (isRevoked) return false;
@@ -151,16 +152,12 @@ export function DemosView() {
   }, [filter]);
 
   const counts = useMemo(() => {
-    const now = Date.now();
     const live = demos.filter((d) => d.status !== "revoked");
     return {
       all: demos.length,
-      active: live.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() >= now : true)).length,
-      expiring: live.filter((d) => {
-        const isExp = d.expiresAt ? new Date(d.expiresAt).getTime() < now : false;
-        return !isExp && d.daysRemaining <= 3;
-      }).length,
-      expired: live.filter((d) => (d.expiresAt ? new Date(d.expiresAt).getTime() < now : false)).length,
+      active: live.filter((d) => d.status !== "expired").length,
+      expiring: live.filter((d) => d.status !== "expired" && d.daysRemaining <= 3).length,
+      expired: live.filter((d) => d.status === "expired").length,
       revoked: demos.filter((d) => d.status === "revoked").length,
     };
   }, [demos]);
@@ -316,7 +313,7 @@ export function DemosView() {
             const ub = isRevoked
               ? { label: "Revocada", className: "bg-secondary text-muted-foreground border-transparent" }
               : urgencyBadge(demo.daysRemaining);
-            const isExpired = demo.daysRemaining <= 0;
+            const isExpired = demo.status === "expired";
             const isPending = pendingId === demo.id;
             return (
               <Card

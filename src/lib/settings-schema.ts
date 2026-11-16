@@ -58,7 +58,7 @@ export interface StationSettings {
 /** Marcadores que entienden las plantillas, con su explicación para la UI. */
 export const TEMPLATE_PLACEHOLDERS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "{nombre}", label: "Nombre o alias del cliente" },
-  { key: "{producto}", label: "Nombre del producto (Lite, Farmacia)" },
+  { key: "{producto}", label: "Nombre del producto (Bodega, Farmacia)" },
   { key: "{licencia}", label: "Tipo de licencia" },
   { key: "{equipo}", label: "ID del equipo" },
   { key: "{vencimiento}", label: "Fecha de vencimiento" },
@@ -167,7 +167,7 @@ function text(raw: unknown, field: string, max: number): string {
   return v;
 }
 
-const PRODUCT_LABEL: Record<SettingsProductId, string> = { bodega: "Lite", farmacia: "Farmacia" };
+const PRODUCT_LABEL: Record<SettingsProductId, string> = { bodega: "Bodega", farmacia: "Farmacia" };
 
 /**
  * Valida y normaliza un objeto de ajustes completo. Lanza

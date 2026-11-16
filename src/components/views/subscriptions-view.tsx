@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   DollarSign,
   AlertCircle,
@@ -95,11 +95,15 @@ export function SubscriptionsView() {
   const [isLoading, setIsLoading] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState<Subscription | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [confirmPay, setConfirmPay] = useState<{ sub: Subscription; kind: "pay" | "extend" } | null>(null);
+  const seqRef = useRef(0);
 
   const fetchSubscriptions = async (showLoading = true) => {
+    const seq = ++seqRef.current;
     if (showLoading) setIsLoading(true);
     try {
       const licenses = await getLicenses(productId);
+      if (seq !== seqRef.current) return;
       const monthlySubs = licenses
         .filter((l) => l.type === "monthly" && l.status !== "revoked")
         .map((l, i) => {
@@ -136,13 +140,14 @@ export function SubscriptionsView() {
         });
       setSubs(monthlySubs);
     } catch (err: any) {
+      if (seq !== seqRef.current) return;
       toast({
         title: "Error al cargar suscripciones",
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (seq === seqRef.current) setIsLoading(false);
     }
   };
 
@@ -410,7 +415,7 @@ export function SubscriptionsView() {
                             size="sm"
                             variant="outline"
                             className="h-8 text-xs opacity-70 group-hover:opacity-100"
-                            onClick={() => handleRegisterPayment(sub)}
+                            onClick={() => setConfirmPay({ sub, kind: "pay" })}
                             disabled={isPending}
                           >
                             {isPending ? (
@@ -437,11 +442,11 @@ export function SubscriptionsView() {
                             {!isCancelled && (
                               <>
                                 <DropdownMenuItem
-                                  onClick={() => handleRegisterPayment(sub)}
+                                  onClick={() => setConfirmPay({ sub, kind: "pay" })}
                                 >
                                   <CheckCircle2 className="size-4" /> Registrar pago
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleExtend(sub)}>
+                                <DropdownMenuItem onClick={() => setConfirmPay({ sub, kind: "extend" })}>
                                   <CalendarPlus className="size-4" /> Extender vencimiento
                                 </DropdownMenuItem>
                               </>
@@ -490,6 +495,36 @@ export function SubscriptionsView() {
           />
         </div>
       </Card>
+
+      {/* ── Confirmación de pago / extensión ── */}
+      <AlertDialog open={!!confirmPay} onOpenChange={(o) => !o && setConfirmPay(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmPay?.kind === "pay" ? "¿Registrar el pago?" : "¿Extender 15 días de cortesía?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmPay?.kind === "pay"
+                ? `Se sumarán 30 días al vencimiento de ${confirmPay?.sub.alias ?? confirmPay?.sub.deviceId} (${formatCurrency(confirmPay?.sub.amountUsd ?? 0)}). Hazlo solo con el pago ya recibido: no queda un registro de pagos aparte.`
+                : `Se sumarán 15 días al vencimiento de ${confirmPay?.sub.alias ?? confirmPay?.sub.deviceId} sin cobrar.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const c = confirmPay;
+                setConfirmPay(null);
+                if (!c) return;
+                if (c.kind === "pay") handleRegisterPayment(c.sub);
+                else handleExtend(c.sub);
+              }}
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Confirmación cancelar ── */}
       <AlertDialog

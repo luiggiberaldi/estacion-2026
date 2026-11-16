@@ -6,6 +6,7 @@ import {
   corsHeadersFor,
   handleBackupOptions,
 } from "../_lib/backup-auth";
+import { BACKUP_PRODUCT_ID, evaluateBackupEntitlement, type LicenseRow } from "@/lib/backup-entitlement";
 
 // Relay de respaldos para dispositivos que la política RLS bloquea.
 //
@@ -46,6 +47,26 @@ export async function POST(req: Request) {
     }
 
     const admin = getSupabaseAdmin();
+
+    // Solo licencias de pago vivas de Bodega (permanente/mensual, con la gracia
+    // de la política compartida). Antes el relay aceptaba cualquier equipo con el
+    // secreto: demos, revocadas y equipos de Farmacia subían respaldos aquí.
+    const { data: lic, error: licErr } = await admin
+      .from("licenses")
+      .select("product_id, device_id, type, is_active, expires_at")
+      .eq("product_id", BACKUP_PRODUCT_ID)
+      .eq("device_id", deviceId)
+      .maybeSingle();
+    if (licErr) {
+      return NextResponse.json({ error: "No se pudo verificar la licencia" }, { status: 502, headers: cors });
+    }
+    const entitlement = evaluateBackupEntitlement((lic as LicenseRow | null) ?? null, deviceId);
+    if (!entitlement.ok) {
+      return NextResponse.json(
+        { error: "El dispositivo no tiene licencia de respaldo activa", reason: entitlement.reason },
+        { status: 403, headers: cors }
+      );
+    }
     const { error } = await admin
       .from("cloud_backups")
       .upsert(
