@@ -121,32 +121,32 @@ async function main() {  const o = args();
   const orgName = `pda-${o.business.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)}`;
   const projectName = `${o.business} — PreciosAlDía Pro`.slice(0, 60);
 
-  console.log('═══ Plan de aprovisionamiento ═══');
-  console.log(`  Negocio:      ${o.business}`);
-  console.log(`  Email dueño:  ${o.email}`);
-  console.log(`  Teléfono:     ${o.phone || '(no indicado)'}`);
-  console.log(`  Organización: ${orgName}`);
-  console.log(`  Proyecto:     ${projectName}`);
-  console.log(`  Región:       ${o.region}`);
-  console.log(`  Código:       ${licenseCode}`);
-  console.log(`  SQL a aplicar: ${SCHEMA_FILES.length} archivos`);
-  console.log(o.dryRun ? '\n▶ DRY-RUN: no se crea nada. Agrega --execute para correr de verdad.\n' : '\n▶ EXECUTE: creando recursos reales…\n');
+  console.info('═══ Plan de aprovisionamiento ═══');
+  console.info(`  Negocio:      ${o.business}`);
+  console.info(`  Email dueño:  ${o.email}`);
+  console.info(`  Teléfono:     ${o.phone || '(no indicado)'}`);
+  console.info(`  Organización: ${orgName}`);
+  console.info(`  Proyecto:     ${projectName}`);
+  console.info(`  Región:       ${o.region}`);
+  console.info(`  Código:       ${licenseCode}`);
+  console.info(`  SQL a aplicar: ${SCHEMA_FILES.length} archivos`);
+  console.info(o.dryRun ? '\n▶ DRY-RUN: no se crea nada. Agrega --execute para correr de verdad.\n' : '\n▶ EXECUTE: creando recursos reales…\n');
 
   if (o.dryRun) {
-    console.log('Archivos SQL en orden:');
-    SCHEMA_FILES.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
-    console.log('\nAl ejecutar, el último paso imprime el INSERT para el directorio de la Estación.');
+    console.info('Archivos SQL en orden:');
+    SCHEMA_FILES.forEach((f, i) => console.info(`  ${i + 1}. ${f}`));
+    console.info('\nAl ejecutar, el último paso imprime el INSERT para el directorio de la Estación.');
     return;
   }
 
   // 1. Organización
-  console.log('① Creando organización…');
+  console.info('① Creando organización…');
   const org = await mgmt('POST', '/v1/organizations', { name: orgName });
   const orgSlug = org.slug || org.id || org.data?.slug;
-  console.log(`   OK: ${orgSlug}`);
+  console.info(`   OK: ${orgSlug}`);
 
   // 2. Proyecto
-  console.log('② Creando proyecto (puede tardar ~2 min)…');
+  console.info('② Creando proyecto (puede tardar ~2 min)…');
   const proj = await mgmt('POST', '/v1/projects', {
     organization_slug: orgSlug,
     name: projectName,
@@ -155,17 +155,17 @@ async function main() {  const o = args();
     plan: 'free',
   });
   const ref = proj.id || proj.ref || proj.data?.ref;
-  console.log(`   ref: ${ref} — esperando ACTIVE…`);
+  console.info(`   ref: ${ref} — esperando ACTIVE…`);
   await waitActive(ref);
   const url = `https://${ref}.supabase.co`;
-  console.log(`   OK: ${url}`);
+  console.info(`   OK: ${url}`);
 
   // 3. Esquema (vía conexión directa: el Management API no expone ejecución SQL)
-  console.log('③ Aplicando esquema base…');
+  console.info('③ Aplicando esquema base…');
   for (const f of SCHEMA_FILES) {
     const sql = readFileSync(join(PRO_REPO, f), 'utf8');
     applySql(ref, dbPassword, sql);
-    console.log(`   OK: ${f}`);
+    console.info(`   OK: ${f}`);
   }
 
   // 4. Claves del proyecto
@@ -173,10 +173,10 @@ async function main() {  const o = args();
   const anonKey = Array.isArray(keys)
     ? keys.find(k => k.name === 'anon' || k.type === 'anon')?.api_key || keys.find(k => k.name === 'anon')?.key
     : keys?.anon_key;
-  if (!anonKey) console.log('   ⚠ No pude leer la anon key automáticamente; cópiala del dashboard.');
+  if (!anonKey) console.info('   ⚠ No pude leer la anon key automáticamente; cópiala del dashboard.');
 
   // 5. Usuario dueño en Auth
-  console.log('④ Creando usuario dueño en Auth…');
+  console.info('④ Creando usuario dueño en Auth…');
   let userId = '(crear manual)';
   try {
     const user = await mgmt('POST', `/v1/projects/${ref}/auth/v1/admin/users`, {
@@ -184,29 +184,29 @@ async function main() {  const o = args();
       user_metadata: { business_name: o.business, license_code: licenseCode },
     });
     userId = user.id || user.user?.id || '(revisar)';
-    console.log(`   OK: ${userId}`);
+    console.info(`   OK: ${userId}`);
   } catch (e) {
-    console.log(`   ⚠ No se pudo crear vía API: ${e.message}`);
-    console.log('   → Créalo a mano en el dashboard: Authentication → Users → Add user (email confirmado).');
+    console.info(`   ⚠ No se pudo crear vía API: ${e.message}`);
+    console.info('   → Créalo a mano en el dashboard: Authentication → Users → Add user (email confirmado).');
   }
 
   // 6. Fila de licencia premium en el proyecto del cliente
   if (userId && !userId.startsWith('(')) {
     applySql(ref, dbPassword,
       `insert into public.licenses (user_id, type, status, notes) values ('${userId}', 'permanent', 'active', 'Provisión automática ${licenseCode}') on conflict (user_id) do update set status='active', notes=excluded.notes;`);
-    console.log('⑤ Licencia premium registrada en el proyecto del cliente.');
+    console.info('⑤ Licencia premium registrada en el proyecto del cliente.');
   }
 
-  console.log('\n═══ Entregar al cliente ═══');
-  console.log(`  Código de licencia: ${licenseCode}`);
-  console.log(`  Email:              ${o.email}`);
-  console.log(`  Clave temporal:     ${tempPassword}  (debe cambiarla al entrar)`);
-  console.log(`  Proyecto:           ${url}`);
+  console.info('\n═══ Entregar al cliente ═══');
+  console.info(`  Código de licencia: ${licenseCode}`);
+  console.info(`  Email:              ${o.email}`);
+  console.info(`  Clave temporal:     ${tempPassword}  (debe cambiarla al entrar)`);
+  console.info(`  Proyecto:           ${url}`);
 
-  console.log('\n═══ INSERT para el directorio de la Estación ═══');
-  console.log('(lo ejecuta el asistente con su tooling de la Estación)');
-  console.log(`insert into public.customer_projects (license_code, account_email, business_name, phone, supabase_url, supabase_anon_key)`);
-  console.log(`values ('${licenseCode}', '${o.email}', '${o.business.replace(/'/g, "''")}', '${(o.phone || '').replace(/'/g, "''")}', '${url}', '${anonKey || 'COPIAR_DEL_DASHBOARD'}');`);
+  console.info('\n═══ INSERT para el directorio de la Estación ═══');
+  console.info('(lo ejecuta el asistente con su tooling de la Estación)');
+  console.info(`insert into public.customer_projects (license_code, account_email, business_name, phone, supabase_url, supabase_anon_key)`);
+  console.info(`values ('${licenseCode}', '${o.email}', '${o.business.replace(/'/g, "''")}', '${(o.phone || '').replace(/'/g, "''")}', '${url}', '${anonKey || 'COPIAR_DEL_DASHBOARD'}');`);
 }
 
 main().catch(e => { console.error('\n✖ Falló:', e.message); process.exit(1); });

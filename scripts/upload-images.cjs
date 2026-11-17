@@ -94,7 +94,7 @@ async function run() {
   }
 
   // 2. Ensure Storage Bucket exists and is public
-  const { data: bucket, error: bucketError } = await supabase.storage.getBucket('product-images');
+  const { error: bucketError } = await supabase.storage.getBucket('product-images');
   if (bucketError) {
     console.log("📦 Creating public bucket 'product-images'...");
     await supabase.storage.createBucket('product-images', { public: true });

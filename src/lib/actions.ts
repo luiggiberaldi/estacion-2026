@@ -537,9 +537,6 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
 
   const clMap = new Map(dbCloudLicenses.map((cl: any) => [cl.device_id, cl]));
 
-  // Con producto: se descartan los respaldos de equipos cuya licencia es de OTRO
-  // producto (un equipo de Farmacia no debe aparecer en la lista de Lite). Los
-  // equipos sin licencia se siguen tratando como de bodega, igual que getDevices.
   // Con producto: solo equipos con licencia de PAGO activa (permanente o
   // mensual) de ese producto. Los respaldos de demos, revocadas, equipos sin
   // licencia o de otro producto no se listan (siguen guardados en la base).

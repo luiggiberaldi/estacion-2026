@@ -40,7 +40,9 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
 }
 
 // IPs de la propia máquina (desarrollo local): no son visitas reales y no se cuentan.
-const LOCAL_IPS = '("::1","127.0.0.1","::ffff:127.0.0.1")';
+// Excluye las visitas locales pero conserva las de IP desconocida (NULL): con
+// `.not("ip","in",…)` SQL descartaba también las NULL.
+const NOT_LOCAL = 'ip.is.null,ip.not.in.("::1","127.0.0.1","::ffff:127.0.0.1")';
 
 export interface VisitsPage {
   visits: Visit[];
@@ -60,7 +62,7 @@ export async function getVisits(limit = 50, offset = 0): Promise<VisitsPage> {
   const { data, error } = await admin
     .from("visits")
     .select("*")
-    .not("ip", "in", LOCAL_IPS)
+    .or(NOT_LOCAL)
     .order("created_at", { ascending: false })
     .range(from, from + size); // size+1 filas para saber si hay más
   if (error) {
@@ -98,7 +100,7 @@ export async function getVisitStats(): Promise<VisitStats> {
   const totalQ = await admin
     .from("visits")
     .select("id", { count: "exact", head: true })
-    .not("ip", "in", LOCAL_IPS);
+    .or(NOT_LOCAL);
   if (totalQ.error) {
     if (isMissingTable(totalQ.error)) return EMPTY_STATS;
     throw new Error(`Error al contar visitas: ${totalQ.error.message}`);
@@ -114,7 +116,7 @@ export async function getVisitStats(): Promise<VisitStats> {
       admin
         .from("visits")
         .select("id, ip, country, created_at")
-        .not("ip", "in", LOCAL_IPS)
+        .or(NOT_LOCAL)
         .gte("created_at", weekStart)
         .order("created_at", { ascending: false })
         .order("id", { ascending: true }),

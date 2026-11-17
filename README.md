@@ -1,6 +1,6 @@
-# Estación Maestra · Precios al Día Bodega
+# Estación Maestra · Precios al Día
 
-Panel de administración aislado para gestionar licencias, demos, backups y mensualidades del POS "Precios al Día Bodega".
+Panel de administración aislado para gestionar licencias, demos, respaldos y mensualidades de los POS de Precios al Día: **Bodega**, **Farmacia** y **Nube**.
 
 ## 🚀 Inicio rápido
 
@@ -83,13 +83,47 @@ Los datos provienen de Supabase mediante Server Actions con la clave
 `SUPABASE_SERVICE_ROLE_KEY` (solo servidor). Variables requeridas en `.env.local`:
 
 ```
+# Base principal (licencias, equipos, respaldos) — obligatorias
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+
+# Acceso al panel — obligatorias
 ADMIN_SESSION_SECRET=<hex de 32+ bytes; firma las cookies em_session y em_trusted>
+ADMIN_PIN_SHA256=<sha256 del PIN de 6 dígitos; se usa si no se cambió en Ajustes>
+
+# Respaldos en Storage (proyecto de respaldos)
+SUPABASE_BACKUP_URL=...
+SUPABASE_BACKUP_SERVICE_ROLE_KEY=...
+SUPABASE_BACKUP_BUCKET=...
+
+# Precios al Día Nube (pestaña Nube; sin ellas la pestaña dice "no configurada")
+NUBE_SUPABASE_URL=...
+NUBE_SUPABASE_SERVICE_ROLE_KEY=...
+
+# Opcionales
+# ADMIN_DISPLAY_NAME=<nombre que se muestra en el panel; por defecto "Administrador">
 # BACKUP_ALLOWED_ORIGINS=<origins extra separados por coma para CORS>
 # ADMIN_BREAKGLASS_IPS=<IPs exactas separadas por coma; ver "Acceso">
 ```
+
+Rutas públicas de la API (todas con CORS por allowlist):
+
+| Ruta | Para qué |
+|---|---|
+| `POST /api/backup/device-credential/claim` | La caja canjea el código de 8 caracteres por su credencial (un uso, 15 min, freno de 5 fallos). |
+| `GET/POST /api/backup/relay` | Leer o guardar el respaldo de emergencia de la caja (`x-device-credential`). |
+| `POST /api/backup/storage/upload` | Subida del respaldo a Storage (`x-device-credential`). |
+| `/api/backup/complete` | Retirado (410). |
+
+Migraciones (`docs/migrations/`, se aplican a mano en el SQL Editor):
+
+| # | Qué hace | Estado |
+|---|---|---|
+| 001–007 | Lectura anónima de licencias, aislamiento por producto, directorio, credenciales por equipo, `get_license_status`, ajustes, endurecimiento | Aplicadas antes de la auditoría 2026-11-16 |
+| 008 | Códigos de vinculación del respaldo | Staging y prod (2026-11-17) |
+| 009 | Identidad de equipo ligada a `auth.uid()`; Storage sin escritura anónima | Staging y prod (2026-11-16) |
+| 010 | Rendimiento de políticas (`(select auth.uid())`, `sync_documents`, índice) | Ver bitácora |
 
 `/api/backup/relay` y `/api/backup/storage/upload` exigen la credencial propia
 de cada equipo (`x-device-credential`). La caja la obtiene canjeando un código
