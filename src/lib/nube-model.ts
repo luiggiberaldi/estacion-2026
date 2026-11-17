@@ -45,7 +45,12 @@ export interface RawDevice {
   revoked_at: string | null;
 }
 export interface RawSession { member_id: string; device_id: string; created_at: string; expires_at: string; ended_at: string | null }
-export interface RawSale { account_id: string; device_id: string; server_at: string; status: string }
+/**
+ * Ventas por equipo, ya agregadas en la base por la RPC
+ * `estacion_device_sales_stats` (sin anuladas). Antes se bajaban todas las filas
+ * de `sales` y PostgREST las cortaba en 1000: los conteos quedaban mal.
+ */
+export interface RawSalesStat { device_id: string; sales_count: number | string; last_sale_at: string | null }
 export interface RawOwner { id: string; email: string | null; email_confirmed_at: string | null; last_sign_in_at: string | null }
 
 export interface NubeDevice {
@@ -122,7 +127,7 @@ export interface NubeRawData {
   members: RawMember[];
   devices: RawDevice[];
   sessions: RawSession[];
-  sales: RawSale[];
+  salesStats: RawSalesStat[];
   owners: RawOwner[];
 }
 
@@ -142,12 +147,9 @@ export function buildNubeAccounts(raw: NubeRawData, now: number = Date.now()): N
   }
 
   const salesByDevice = new Map<string, { count: number; last: string | null }>();
-  for (const s of raw.sales) {
-    if (s.status === "anulada") continue;
-    const cur = salesByDevice.get(s.device_id) ?? { count: 0, last: null };
-    cur.count += 1;
-    cur.last = maxIso(cur.last, s.server_at);
-    salesByDevice.set(s.device_id, cur);
+  for (const s of raw.salesStats) {
+    // count(*) llega como texto desde PostgREST (bigint).
+    salesByDevice.set(s.device_id, { count: Number(s.sales_count) || 0, last: s.last_sale_at ?? null });
   }
 
   return raw.accounts

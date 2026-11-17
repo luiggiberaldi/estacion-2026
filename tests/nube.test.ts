@@ -59,9 +59,9 @@ function raw(): NubeRawData {
       { member_id: 'm2', device_id: PDN, created_at: '2026-11-16T08:00:00Z', expires_at: '2026-11-16T20:00:00Z', ended_at: null },
       { member_id: 'm1', device_id: PDN, created_at: '2026-11-15T08:00:00Z', expires_at: '2026-11-15T20:00:00Z', ended_at: null },
     ],
-    sales: [
-      { account_id: acc, device_id: PDN, server_at: '2026-11-16T09:00:00Z', status: 'completada' },
-      { account_id: acc, device_id: PDN, server_at: '2026-11-16T10:00:00Z', status: 'anulada' },
+    // Ya agregado por la RPC estacion_device_sales_stats (sin anuladas); bigint llega como texto.
+    salesStats: [
+      { device_id: PDN, sales_count: '1', last_sale_at: '2026-11-16T09:00:00Z' },
     ],
     owners: [{ id: 'u-owner', email: 'juancho@ejemplo.com', email_confirmed_at: '2026-11-10T00:00:00Z', last_sign_in_at: null }],
   };
@@ -90,10 +90,23 @@ describe('ficha de cada cuenta', () => {
     expect(a.equiposConectados).toBe(2);
   });
 
-  it('cuenta las ventas sin las anuladas', () => {
+  it('usa los conteos agregados de ventas por equipo', () => {
     expect(a.devices[0].salesCount).toBe(1);
+    expect(a.devices[1].salesCount).toBe(0);
     expect(a.salesCount).toBe(1);
     expect(a.lastSaleAt).toBe('2026-11-16T09:00:00Z');
+  });
+
+  it('más de 1000 ventas en un equipo se cuentan completas', () => {
+    const r = raw();
+    r.salesStats = [
+      { device_id: PDN, sales_count: '2500', last_sale_at: '2026-11-16T09:00:00Z' },
+      { device_id: 'PDN-' + 'F'.repeat(32), sales_count: 7, last_sale_at: '2026-11-16T11:00:00Z' },
+    ];
+    const [acc] = buildNubeAccounts(r, NOW);
+    expect(acc.devices[0].salesCount).toBe(2500);
+    expect(acc.salesCount).toBe(2507);
+    expect(acc.lastSaleAt).toBe('2026-11-16T11:00:00Z');
   });
 });
 

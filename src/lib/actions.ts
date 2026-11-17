@@ -12,6 +12,7 @@ import { loadSettings } from "./settings-store";
 import { termsFor } from "./settings-schema";
 import { LICENSE_TYPES } from "./licensePolicy";
 import { looksLikeNubeId } from "./nube-id";
+import { selectAllPaged, selectInBatches } from "./db-paging";
 
 function decompressBackupData(backupData: any): any {
   if (backupData && backupData.compressed) {
@@ -91,37 +92,45 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
   const { settings } = await loadSettings();
   const graceDays = termsFor(settings, productId).monthlyGraceDays;
 
-  // 1. Obtener datos de la tabla autoritativa de validación (licenses), scoped por producto
-  const { data: dbLicenses, error: licErr } = await admin
-    .from("licenses")
-    .select("*")
-    .eq("product_id", productId)
-    .not("device_id", "is", null)
-    .order("created_at", { ascending: false });
+  // 1. Obtener datos de la tabla autoritativa de validación (licenses), scoped por producto.
+  // Paginado: PostgREST corta en 1000 filas y la lista se truncaría en silencio.
+  const dbLicenses = await selectAllPaged<any>(
+    () =>
+      admin
+        .from("licenses")
+        .select("*")
+        .eq("product_id", productId)
+        .not("device_id", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    "Error al obtener licencias"
+  );
+  const licDeviceIds = dbLicenses.map((l: any) => l.device_id as string);
 
-  if (licErr) throw new Error(`Error al obtener licencias: ${licErr.message}`);
+  // 2. Metadatos administrativos (cloud_licenses), solo de los equipos de esta lista.
+  const dbCloudLicenses = await selectInBatches<any>(
+    licDeviceIds,
+    (batch) => admin.from("cloud_licenses").select("*").in("device_id", batch).order("id", { ascending: true }),
+    "Error al obtener metadatos de licencias"
+  );
 
-  // 2. Obtener datos de la tabla de metadatos administrativos (cloud_licenses)
-  const { data: dbCloudLicenses, error: clErr } = await admin
-    .from("cloud_licenses")
-    .select("*");
-
-  if (clErr) throw new Error(`Error al obtener metadatos de licencias: ${clErr.message}`);
-
-  const cloudLicMap = new Map(dbCloudLicenses?.map((cl: any) => [cl.device_id, cl]) || []);
+  const cloudLicMap = new Map(dbCloudLicenses.map((cl: any) => [cl.device_id, cl]));
 
   // 2b. last_seen real por dispositivo (account_devices): única fuente honesta
   // para "en línea" / "última conexión". licenses.updated_at se infla con
   // acciones administrativas (p. ej. revocaciones masivas) y no sirve.
-  const { data: dbDevices } = await admin
-    .from("account_devices")
-    .select("device_id, last_seen");
+  const dbDevices = await selectInBatches<any>(
+    licDeviceIds,
+    (batch) =>
+      admin.from("account_devices").select("id, device_id, last_seen").in("device_id", batch).order("id", { ascending: true }),
+    "Error al obtener la última conexión de los equipos"
+  );
   const lastSeenMap = new Map(
-    ((dbDevices || []) as any[]).map((d) => [d.device_id, d.last_seen as string | null])
+    (dbDevices as any[]).map((d) => [d.device_id, d.last_seen as string | null])
   );
 
   // 3. Cruzar la información
-  return (dbLicenses || []).map((l: any) => {
+  return dbLicenses.map((l: any) => {
     const cl = cloudLicMap.get(l.device_id) || {};
     const deviceLastSeen: string | null = lastSeenMap.get(l.device_id) ?? null;
 
@@ -500,25 +509,33 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
   // 1. Obtener metadata de respaldos. IMPORTANTE: no traer la columna completa
   // `backup_data` (puede contener el dump comprimido entero). Extraer solo los
   // campos de metadata via operadores JSON de PostgREST.
-  const { data: dbBackups, error: bkpErr } = await admin
-    .from("cloud_backups")
-    .select(
-      "id, device_id, updated_at, email, " +
-      "backup_data->>drive_url, backup_data->>size_bytes, backup_data->>product_count, " +
-      "backup_data->>sales_count, backup_data->>customer_count"
-    )
-    .order("updated_at", { ascending: false });
+  const dbBackups = await selectAllPaged<any>(
+    () =>
+      admin
+        .from("cloud_backups")
+        .select(
+          "id, device_id, updated_at, email, " +
+          "backup_data->>drive_url, backup_data->>size_bytes, backup_data->>product_count, " +
+          "backup_data->>sales_count, backup_data->>customer_count"
+        )
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: true }),
+    "Error al obtener respaldos"
+  );
 
-  if (bkpErr) throw new Error(`Error al obtener respaldos: ${bkpErr.message}`);
+  // 2. Obtener licencias para extraer alias y nombre de cliente (solo de esos equipos)
+  const dbCloudLicenses = await selectInBatches<any>(
+    dbBackups.map((b: any) => b.device_id as string),
+    (batch) =>
+      admin
+        .from("cloud_licenses")
+        .select("id, device_id, business_name, email, created_at")
+        .in("device_id", batch)
+        .order("id", { ascending: true }),
+    "Error al obtener metadatos"
+  );
 
-  // 2. Obtener licencias para extraer alias y nombre de cliente
-  const { data: dbCloudLicenses, error: clErr } = await admin
-    .from("cloud_licenses")
-    .select("device_id, business_name, email, created_at");
-
-  if (clErr) throw new Error(`Error al obtener metadatos: ${clErr.message}`);
-
-  const clMap = new Map(dbCloudLicenses?.map((cl: any) => [cl.device_id, cl]) || []);
+  const clMap = new Map(dbCloudLicenses.map((cl: any) => [cl.device_id, cl]));
 
   // Con producto: se descartan los respaldos de equipos cuya licencia es de OTRO
   // producto (un equipo de Farmacia no debe aparecer en la lista de Lite). Los
@@ -526,7 +543,7 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
   // Con producto: solo equipos con licencia de PAGO activa (permanente o
   // mensual) de ese producto. Los respaldos de demos, revocadas, equipos sin
   // licencia o de otro producto no se listan (siguen guardados en la base).
-  let rowsToShow: any[] = dbBackups || [];
+  let rowsToShow: any[] = dbBackups;
   if (productId !== undefined) {
     const paid = await paidBackupDeviceIds(productId);
     rowsToShow = rowsToShow.filter((b) => paid.has(b.device_id));
@@ -716,11 +733,13 @@ async function resolveBackupAliases(
   const map = new Map<string, string | null>();
   if (deviceIds.length === 0) return map;
   const admin = getSupabaseAdmin();
-  const { data } = await admin
-    .from("cloud_licenses")
-    .select("device_id, business_name")
-    .in("device_id", deviceIds);
-  for (const row of (data || []) as any[]) {
+  const data = await selectInBatches<any>(
+    deviceIds,
+    (batch) =>
+      admin.from("cloud_licenses").select("id, device_id, business_name").in("device_id", batch).order("id", { ascending: true }),
+    "Error al obtener alias"
+  );
+  for (const row of data as any[]) {
     map.set(row.device_id, parseBusinessName(row.business_name).businessName);
   }
   return map;
@@ -805,13 +824,14 @@ export async function getBackupHealth(productId: ProductId = "bodega"): Promise<
   if (paid.length === 0) return [];
 
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin
-    .from("cloud_backups")
-    .select("device_id, updated_at")
-    .in("device_id", paid.map((l) => l.deviceId));
-  if (error) throw new Error(`Error al consultar respaldos: ${error.message}`);
+  const data = await selectInBatches<any>(
+    paid.map((l) => l.deviceId),
+    (batch) =>
+      admin.from("cloud_backups").select("id, device_id, updated_at").in("device_id", batch).order("id", { ascending: true }),
+    "Error al consultar respaldos"
+  );
   const lastByDevice = new Map<string, string>(
-    ((data || []) as any[]).map((b) => [b.device_id, b.updated_at as string])
+    (data as any[]).map((b) => [b.device_id, b.updated_at as string])
   );
 
   const limit = Date.now() - BACKUP_STALE_HOURS * 3600 * 1000;
@@ -891,38 +911,49 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
   assertProduct(productId);
   const admin = getSupabaseAdmin();
 
-  const { data: dbDevices, error: devErr } = await admin
-    .from("account_devices")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (devErr) throw new Error(`Error al obtener dispositivos: ${devErr.message}`);
+  const dbDevices = await selectAllPaged<any>(
+    () =>
+      admin
+        .from("account_devices")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    "Error al obtener dispositivos"
+  );
 
   // account_devices no guarda el producto: se toma de la licencia del equipo
   // (toda caja que se registra crea su fila en licenses con su product_id). Los
   // equipos sin licencia son de bodega (las cajas antiguas, anteriores al campo).
-  const { data: dbLicenseProducts, error: lpErr } = await admin
-    .from("licenses")
-    .select("device_id, product_id")
-    .not("device_id", "is", null);
-
-  if (lpErr) throw new Error(`Error al obtener el producto de los dispositivos: ${lpErr.message}`);
+  const dbLicenseProducts = await selectAllPaged<any>(
+    () =>
+      admin
+        .from("licenses")
+        .select("id, device_id, product_id")
+        .not("device_id", "is", null)
+        .order("id", { ascending: true }),
+    "Error al obtener el producto de los dispositivos"
+  );
 
   const productByDevice = new Map<string, string>(
-    ((dbLicenseProducts || []) as any[]).map((l) => [l.device_id, l.product_id ?? "bodega"])
+    (dbLicenseProducts as any[]).map((l) => [l.device_id, l.product_id ?? "bodega"])
   );
-  const devicesOfProduct = (dbDevices || []).filter(
+  const devicesOfProduct = dbDevices.filter(
     (d: any) => (productByDevice.get(d.device_id) ?? "bodega") === productId
   );
 
-  // Obtener licencias para cruzar el nombre de cliente
-  const { data: dbCloudLicenses, error: clErr } = await admin
-    .from("cloud_licenses")
-    .select("device_id, phone, business_name, created_at");
+  // Obtener licencias para cruzar el nombre de cliente (solo de esos equipos)
+  const dbCloudLicenses = await selectInBatches<any>(
+    devicesOfProduct.map((d: any) => d.device_id as string),
+    (batch) =>
+      admin
+        .from("cloud_licenses")
+        .select("id, device_id, phone, business_name, created_at")
+        .in("device_id", batch)
+        .order("id", { ascending: true }),
+    "Error al obtener metadatos"
+  );
 
-  if (clErr) throw new Error(`Error al obtener metadatos: ${clErr.message}`);
-
-  const clMap = new Map(dbCloudLicenses?.map((cl: any) => [cl.device_id, cl]) || []);
+  const clMap = new Map(dbCloudLicenses.map((cl: any) => [cl.device_id, cl]));
 
   return devicesOfProduct.map((d: any) => {
     const cl = clMap.get(d.device_id) || {};

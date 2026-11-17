@@ -2,6 +2,7 @@
 
 import { getSupabaseAdmin } from "./supabase";
 import { requireAdmin } from "./require-admin";
+import { selectAllPaged } from "./db-paging";
 
 export interface Visit {
   id: string;
@@ -106,16 +107,19 @@ export async function getVisitStats(): Promise<VisitStats> {
   // Últimos 7 días (incluye hoy): una sola lectura acotada, el resto se agrupa aquí.
   const weekStart = caracasDayStart(6);
   const todayStart = caracasDayStart(0);
-  const { data, error } = await admin
-    .from("visits")
-    .select("ip, country, created_at")
-    .not("ip", "in", LOCAL_IPS)
-    .gte("created_at", weekStart)
-    .order("created_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(`Error al leer visitas recientes: ${error.message}`);
-
-  const rows = (data || []) as Array<{ ip: string | null; country: string | null; created_at: string }>;
+  // Paginado: .limit(5000) no servía, PostgREST corta en 1000 filas y las
+  // cifras de la semana se quedaban en 1000 sin avisar.
+  const rows = await selectAllPaged<{ ip: string | null; country: string | null; created_at: string }>(
+    () =>
+      admin
+        .from("visits")
+        .select("id, ip, country, created_at")
+        .not("ip", "in", LOCAL_IPS)
+        .gte("created_at", weekStart)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    "Error al leer visitas recientes"
+  );
   const today = rows.filter((r) => r.created_at >= todayStart);
   const countries = new Map<string, number>();
   for (const r of rows) {
