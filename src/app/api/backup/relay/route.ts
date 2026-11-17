@@ -1,95 +1,96 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import {
-  verifyBackupSecret,
-  unauthorized,
-  corsHeadersFor,
-  handleBackupOptions,
-} from "../_lib/backup-auth";
+import { corsHeadersFor, handleBackupOptions } from "../_lib/backup-auth";
+import { DEVICE_CREDENTIAL_HEADER } from "@/lib/device-credential";
+import { getDeviceCredentialStore } from "@/lib/device-credential-store";
+import { getBackupLicense } from "@/lib/device-claim-store";
+import { authorizeRelay } from "@/lib/relay-auth";
 
-// Relay de respaldos para dispositivos que la política RLS bloquea.
+// Relay de respaldos: puerta de emergencia para cajas que no pueden escribir
+// directo en cloud_backups (p. ej. perdieron su sesión anónima y RLS las frena).
+// La Estación escribe/lee por ellas con la service role.
 //
-// Contexto: los dispositivos POS usan sesión anónima y, hasta aplicar la
-// migración 001_device_own_row_rls.sql, RLS les bloquea cloud_backups
-// (42501 al escribir, 0 filas al leer). El botón "Sincronizar con la Nube"
-// reintenta vía este relay con la service-role key del lado servidor
-// (mismo patrón que api/backup/complete). Tras aplicar la migración, el
-// camino directo del dispositivo vuelve a ser el primario y este relay
-// queda como fallback resiliente.
-//
-// Blindaje: exige el header x-backup-secret (shared secret, comparación en
-// tiempo constante) y CORS restringido a allowlist de orígenes.
+// Autorización (ver src/lib/relay-auth.ts):
+//   - credencial PROPIA del equipo en `x-device-credential` (se obtiene
+//     canjeando un código de vinculación generado en la Estación);
+//   - licencia de respaldo vigente, tanto para subir como para leer.
+// El secreto compartido `x-backup-secret` ya no se acepta: iba en el JS público
+// de los POS y permitía leer o pisar el respaldo de cualquier equipo.
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function OPTIONS(req: Request) {
   return handleBackupOptions(req);
 }
 
-function cleanDeviceId(raw: unknown): string | null {
-  const id = typeof raw === "string" ? raw.replace(/\s+/g, "").toUpperCase() : "";
-  return id.length >= 8 && id.length <= 64 ? id : null;
+function authDeps() {
+  return { store: getDeviceCredentialStore(), getLicense: getBackupLicense };
 }
 
-// ── POST: subir/actualizar el backup de un dispositivo ──────────────────────
+// ── POST: subir/actualizar el backup del equipo ─────────────────────────────
 export async function POST(req: Request) {
-  if (!verifyBackupSecret(req)) return unauthorized();
+  const cors = { "Cache-Control": "no-store", ...corsHeadersFor(req.headers.get("origin")) };
 
-  const cors = corsHeadersFor(req.headers.get("origin"));
+  const body = (await req.json().catch(() => null)) as { deviceId?: unknown; backup_data?: unknown } | null;
+  const auth = await authorizeRelay(
+    {
+      deviceId: body?.deviceId ?? req.headers.get("x-device-id"),
+      credential: req.headers.get(DEVICE_CREDENTIAL_HEADER),
+    },
+    authDeps()
+  );
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error, reason: auth.reason }, { status: auth.status, headers: cors });
+  }
+  if (!body?.backup_data || typeof body.backup_data !== "object") {
+    return NextResponse.json({ error: "backup_data requerido" }, { status: 400, headers: cors });
+  }
 
   try {
-    const body = await req.json().catch(() => null);
-    const deviceId = cleanDeviceId(body?.deviceId ?? req.headers.get("x-device-id"));
-    if (!deviceId) {
-      return NextResponse.json({ error: "deviceId inválido" }, { status: 400, headers: cors });
-    }
-    if (!body?.backup_data || typeof body.backup_data !== "object") {
-      return NextResponse.json({ error: "backup_data requerido" }, { status: 400, headers: cors });
-    }
-
-    const admin = getSupabaseAdmin();
-    const { error } = await admin
+    const { error } = await getSupabaseAdmin()
       .from("cloud_backups")
       .upsert(
-        { device_id: deviceId, backup_data: body.backup_data, updated_at: new Date().toISOString() },
+        { device_id: auth.deviceId, backup_data: body.backup_data, updated_at: new Date().toISOString() },
         { onConflict: "device_id" }
       );
     if (error) throw error;
-
-    return NextResponse.json({ ok: true, deviceId }, { headers: cors });
+    return NextResponse.json({ ok: true, deviceId: auth.deviceId }, { headers: cors });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error interno del relay";
-    console.error("[API Backup Relay] POST:", message);
-    return NextResponse.json({ error: message }, { status: 500, headers: cors });
+    console.error("[API Backup Relay] POST:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "No se pudo guardar el respaldo" }, { status: 500, headers: cors });
   }
 }
 
-// ── GET: leer el backup de un dispositivo (para restaurar) ──────────────────
+// ── GET: leer el backup del equipo (para restaurar) ─────────────────────────
 export async function GET(req: Request) {
-  if (!verifyBackupSecret(req)) return unauthorized();
+  const cors = { "Cache-Control": "no-store", ...corsHeadersFor(req.headers.get("origin")) };
 
-  const cors = corsHeadersFor(req.headers.get("origin"));
+  const url = new URL(req.url);
+  const auth = await authorizeRelay(
+    {
+      deviceId: url.searchParams.get("deviceId") ?? req.headers.get("x-device-id"),
+      credential: req.headers.get(DEVICE_CREDENTIAL_HEADER),
+    },
+    authDeps()
+  );
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error, reason: auth.reason }, { status: auth.status, headers: cors });
+  }
 
   try {
-    const url = new URL(req.url);
-    const deviceId = cleanDeviceId(url.searchParams.get("deviceId") ?? req.headers.get("x-device-id"));
-    if (!deviceId) {
-      return NextResponse.json({ error: "deviceId inválido" }, { status: 400, headers: cors });
-    }
-
-    const admin = getSupabaseAdmin();
-    const { data, error } = await admin
+    const { data, error } = await getSupabaseAdmin()
       .from("cloud_backups")
       .select("backup_data, updated_at")
-      .eq("device_id", deviceId)
+      .eq("device_id", auth.deviceId)
       .maybeSingle();
     if (error) throw error;
-
     return NextResponse.json(
-      { ok: true, deviceId, backup_data: data?.backup_data ?? null, updated_at: data?.updated_at ?? null },
+      { ok: true, deviceId: auth.deviceId, backup_data: data?.backup_data ?? null, updated_at: data?.updated_at ?? null },
       { headers: cors }
     );
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error interno del relay";
-    console.error("[API Backup Relay] GET:", message);
-    return NextResponse.json({ error: message }, { status: 500, headers: cors });
+    console.error("[API Backup Relay] GET:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "No se pudo leer el respaldo" }, { status: 500, headers: cors });
   }
 }
