@@ -4,6 +4,15 @@ Registro de cambios: qué cambió y por qué. Regla: ningún commit sin su entra
 
 ---
 
+## 2026-11-17 — Higiene (F6 del plan de fixeo)
+
+- Lint en 0 avisos (scripts: `console.info`, catch sin variable; `use-toast`). Nuevo `npm run check` (tsc + eslint + vitest).
+- `getSessionUser`: el nombre sale de `ADMIN_DISPLAY_NAME` (por defecto «Administrador»), ya no está fijo en el código.
+- `visits.ts`: el filtro de IP local ya no descarta las visitas con IP desconocida (NULL). En prod hoy no hay ninguna (241 = 241).
+- README: nombre «Precios al Día» (Bodega, Farmacia, Nube), todas las variables, rutas públicas y estado de migraciones.
+- Migración 010 (`docs/migrations/010-rendimiento-politicas.sql`): `auth.uid()` → `(select auth.uid())` en las políticas de `public` (mismo resultado, se calcula una vez por consulta) e índice `device_sessions.user_id`. No se unieron las políticas de `sync_documents` (riesgo de cambiar permisos de las cajas). Staging: 3 políticas reescritas, 0 diferencias de significado, idempotente.
+- `verify_activation_code` ignora `p_code`: solo dice si el equipo tiene licencia activa. La llaman Farmacia y Nube (`useLicenseActions.js`, `useSecurity.jsx`); no se cambia para no romper la activación. Queda documentado.
+
 ## 2026-11-17 — Plan de fixeo de la auditoría E2E (F1–F5)
 
 Plan: `docs/plans/2026-11-16-plan-fixeo-auditoria-e2e.md` (local). Cada fase se publicó también en `main` (2.0) como hotfix.

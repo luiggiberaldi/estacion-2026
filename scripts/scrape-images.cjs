@@ -21,7 +21,7 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const _supabase = createClient(supabaseUrl, supabaseKey);
 
 // --- SEARCH KEYWORDS TO HARVEST ALL PRODUCTS ---
 const keywords = [
@@ -50,7 +50,7 @@ async function harvestImagesFromPage(page, storeUrl, imgSelector, storeName) {
     
     if (imgSelector === '.item-img img') {
       // For TuZona, wait for selector
-      try { await page.waitForSelector(imgSelector, { timeout: 5000 }); } catch(e) {}
+      try { await page.waitForSelector(imgSelector, { timeout: 5000 }); } catch {}
     }
 
     const items = await page.evaluate((selector) => {
@@ -156,7 +156,7 @@ async function run() {
           fs.writeFileSync(localPath, buffer);
           console.log(`      💾 Saved: "${item.title}" -> product-images/${slug}.${fileExt}`);
           totalDownloaded++;
-        } catch (err) {
+        } catch {
           // Silent fail for individual image download
         }
       }

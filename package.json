@@ -9,6 +9,7 @@
     "start": "next start -p 3001",
     "lint": "eslint .",
     "test": "vitest run",
+    "check": "tsc --noEmit && eslint . && vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {

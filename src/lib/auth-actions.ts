@@ -93,7 +93,7 @@ export async function logoutAction(): Promise<void> {
 export async function getSessionUser(): Promise<AdminSessionUser | null> {
   const email = await currentSessionEmail();
   if (!email) return null;
-  return { email, name: "Luiggi Beraldi", role: "superadmin" };
+  return { email, name: process.env.ADMIN_DISPLAY_NAME?.trim() || "Administrador", role: "superadmin" };
 }
 
 /** Email de la sesión vigente, o null. Para server components y rutas API. */

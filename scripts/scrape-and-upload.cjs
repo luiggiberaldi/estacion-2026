@@ -248,7 +248,7 @@ async function harvestSingleProductImage(browser, productName) {
       // Reducimos el timeout de navegación a 6 segundos para no perder tiempo en tiendas lentas
       await page.goto(store.url, { timeout: 6000, waitUntil: 'domcontentloaded' });
       if (store.name === 'TuZona') {
-        try { await page.waitForSelector(store.selector, { timeout: 2500 }); } catch (e) {}
+        try { await page.waitForSelector(store.selector, { timeout: 2500 }); } catch {}
       }
 
       const items = await page.evaluate((storeInfo) => {
@@ -285,13 +285,13 @@ async function harvestSingleProductImage(browser, productName) {
           return item;
         }
       }
-    } catch (err) {
+    } catch {
       // Registrar silenciosamente fallo de esta tienda y avanzar
     } finally {
       try {
         await page.close();
         await context.close();
-      } catch (e) {}
+      } catch {}
     }
   }
 
