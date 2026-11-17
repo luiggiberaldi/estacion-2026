@@ -136,20 +136,34 @@ const WINDOW_MS = 15 * 60 * 1000;
 export const MAX_FAILURES_PER_IP = 10;
 export const MAX_FAILURES_GLOBAL = 60;
 
+export interface LoginBlockOptions {
+  /**
+   * No aplicar el tope global (equipo conocido con `em_trusted` válida, o IP de
+   * emergencia en ADMIN_BREAKGLASS_IPS). El tope por IP se aplica siempre.
+   */
+  skipGlobal?: boolean;
+}
+
 /**
  * ¿Hay que frenar este intento? Cuenta fallos recientes de la IP y en total.
  * Devuelve null si la tabla no existe (el freno en memoria sigue activo).
+ * `db` solo se pasa en pruebas.
  */
-export async function isLoginBlocked(ip: string): Promise<boolean | null> {
+export async function isLoginBlocked(
+  ip: string,
+  opts: LoginBlockOptions = {},
+  db?: ReturnType<typeof getSupabaseAdmin>
+): Promise<boolean | null> {
   try {
     const since = new Date(Date.now() - WINDOW_MS).toISOString();
-    const admin = getSupabaseAdmin();
-    const [perIp, global] = await Promise.all([
-      admin.from(FAILURES_TABLE).select("id", { count: "exact", head: true }).eq("ip", ip).gte("at", since),
-      admin.from(FAILURES_TABLE).select("id", { count: "exact", head: true }).gte("at", since),
-    ]);
-    if (perIp.error || global.error) return null;
-    return (perIp.count ?? 0) >= MAX_FAILURES_PER_IP || (global.count ?? 0) >= MAX_FAILURES_GLOBAL;
+    const admin = db ?? getSupabaseAdmin();
+    const perIp = await admin.from(FAILURES_TABLE).select("id", { count: "exact", head: true }).eq("ip", ip).gte("at", since);
+    if (perIp.error) return null;
+    if ((perIp.count ?? 0) >= MAX_FAILURES_PER_IP) return true;
+    if (opts.skipGlobal) return false;
+    const global = await admin.from(FAILURES_TABLE).select("id", { count: "exact", head: true }).gte("at", since);
+    if (global.error) return null;
+    return (global.count ?? 0) >= MAX_FAILURES_GLOBAL;
   } catch {
     return null;
   }

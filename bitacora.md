@@ -4,6 +4,16 @@ Registro de cambios: qué cambió y por qué. Regla: ningún commit sin su entra
 
 ---
 
+## 2026-11-17 — Plan de fixeo de la auditoría E2E (F1–F5)
+
+Plan: `docs/plans/2026-11-16-plan-fixeo-auditoria-e2e.md` (local). Cada fase se publicó también en `main` (2.0) como hotfix.
+
+- **F1:** Next 16.4.6, `middleware.ts` → `proxy.ts`, cabeceras de seguridad (CSP `frame-ancestors`, HSTS) y `server-only`. Migración 009 (identidad de equipo ligada a `auth.uid()`, storage sin escritura anónima).
+- **F3:** el relay de respaldos exige credencial propia por equipo, que se entrega con un código de 8 caracteres (migración 008). Se retiró el secreto común `BACKUP_SHARED_SECRET`.
+- **F4:** `src/lib/db-paging.ts`: las listas (licencias, equipos, respaldos, alias, visitas) se leen por páginas, porque PostgREST corta en 1000 filas. En la Nube, las ventas por equipo vienen agregadas de la RPC `estacion_device_sales_stats`.
+- **F5:** cookie `em_trusted` (90 días, firmada con dominio propio): el equipo que ya entró no queda frenado por el tope global de 60 fallos; el tope de 10 por IP se aplica siempre. Plan B: `ADMIN_BREAKGLASS_IPS`. README actualizado (acceso y relay).
+- Pruebas: `tests/db-paging.test.ts`, `tests/login-guard.test.ts`, `tests/device-claim.test.ts`, `tests/security-headers.test.ts`.
+
 ## 2026-09-30 — Fixeo general Estación, Fases 2–5 (rama `feat/producto-lite-pro`, sin commit aún)
 
 Alcance: solo la Estación. No se tocó Lite ni Pro.
