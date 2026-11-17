@@ -97,3 +97,69 @@ export async function verifySessionClaims(
     return null;
   }
 }
+
+// ── Cookie de "equipo conocido" (`em_trusted`) ──────────────────────────────
+//
+// Se emite al entrar con el PIN correcto y dura 90 días. Quien la presenta (con
+// la versión de PIN vigente) no queda frenado por el tope GLOBAL de fallos, así
+// un ataque distribuido no deja fuera al admin desde su equipo de siempre. El
+// tope por IP se aplica igual.
+//
+// La firma cubre "trusted." + payload: una em_session no vale como em_trusted
+// ni al revés, aunque usen el mismo secreto.
+
+const TRUSTED_COOKIE_NAME = "em_trusted";
+const TRUSTED_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 días
+const TRUSTED_DOMAIN = "trusted.";
+
+export function trustedCookieName(): string {
+  return TRUSTED_COOKIE_NAME;
+}
+
+export function trustedMaxAgeSeconds(): number {
+  return TRUSTED_TTL_MS / 1000;
+}
+
+/** Firma la cookie de equipo conocido para la versión de PIN indicada. */
+export async function signTrusted(secret: string, pinVersion = 0, now: number = Date.now()): Promise<string> {
+  const payload = JSON.stringify({ t: "trusted", x: now + TRUSTED_TTL_MS, v: pinVersion });
+  const payloadB64 = b64urlEncode(new TextEncoder().encode(payload));
+  const key = await hmacKey(secret);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(TRUSTED_DOMAIN + payloadB64));
+  return `${payloadB64}.${b64urlEncode(new Uint8Array(sig))}`;
+}
+
+/**
+ * ¿La cookie es una em_trusted válida, sin vencer y de la versión de PIN
+ * `pinVersion`? Fail-closed: cualquier duda = false.
+ */
+export async function verifyTrusted(
+  cookieValue: string | undefined | null,
+  secret: string | undefined | null,
+  pinVersion: number,
+  now: number = Date.now()
+): Promise<boolean> {
+  try {
+    if (!cookieValue || !secret) return false;
+    const [payloadB64, sigB64] = cookieValue.split(".");
+    if (!payloadB64 || !sigB64) return false;
+    const key = await hmacKey(secret);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      b64urlDecode(sigB64),
+      new TextEncoder().encode(TRUSTED_DOMAIN + payloadB64)
+    );
+    if (!valid) return false;
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64))) as {
+      t?: string;
+      x?: number;
+      v?: number;
+    };
+    if (payload.t !== "trusted" || typeof payload.x !== "number") return false;
+    if (now > payload.x) return false;
+    return (Number.isInteger(payload.v) ? payload.v : 0) === pinVersion;
+  } catch {
+    return false;
+  }
+}

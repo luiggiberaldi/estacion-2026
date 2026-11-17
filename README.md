@@ -25,6 +25,16 @@ Abre [http://localhost:3001](http://localhost:3001)
 
 El acceso al panel es administrativo y **no se documentan credenciales en el repositorio**.
 
+Freno de intentos de PIN (tabla `station_login_failures`, ventana de 15 min):
+- **Por IP:** 10 fallos. Se aplica siempre.
+- **Global:** 60 fallos entre todas las IP. No se aplica a un equipo que ya
+  entró antes: al entrar se guarda la cookie `em_trusted` (90 días; cerrar
+  sesión no la borra y cambiar el PIN la invalida). Así un ataque repartido
+  no deja fuera al admin desde su equipo de siempre.
+- **Plan B** para entrar desde un equipo nuevo durante un ataque: poner tu IP en
+  `ADMIN_BREAKGLASS_IPS` en Vercel (lista separada por comas, coincidencia
+  exacta) y volver a desplegar. Quítala después.
+
 ## 📁 Estructura
 
 ```
@@ -76,16 +86,18 @@ Los datos provienen de Supabase mediante Server Actions con la clave
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-BACKUP_SHARED_SECRET=<hex de 32+ bytes, debe coincidir con VITE_ESTACION_BACKUP_SECRET del POS>
+ADMIN_SESSION_SECRET=<hex de 32+ bytes; firma las cookies em_session y em_trusted>
 # BACKUP_ALLOWED_ORIGINS=<origins extra separados por coma para CORS>
+# ADMIN_BREAKGLASS_IPS=<IPs exactas separadas por coma; ver "Acceso">
 ```
 
-El endpoint `/api/backup/relay` exige el header `x-backup-secret` (comparación en
-tiempo constante; fail-closed si la variable no está configurada) y aplica CORS
-solo a orígenes del allowlist (`estacion-2026.vercel.app`,
+`/api/backup/relay` y `/api/backup/storage/upload` exigen la credencial propia
+de cada equipo (`x-device-credential`). La caja la obtiene canjeando un código
+de 8 caracteres en `/api/backup/device-credential/claim`; ese código se genera en
+Equipos → «Vincular respaldo». Ya no existe secreto común
+(`BACKUP_SHARED_SECRET` / `x-backup-secret` quedaron retirados en F3). CORS solo
+admite los orígenes del allowlist (`preciosaldiaoficial.vercel.app`,
 `localhost:3000/5173/4173` y los de `BACKUP_ALLOWED_ORIGINS`).
-`/api/backup/storage/upload` exige además la credencial por dispositivo
-(`x-device-credential`).
 
 **`/api/backup/complete` está RETIRADO (410 Gone):** hacía upsert de
 `cloud_backups.backup_data` con solo metadatos y por eso sobrescribía el payload

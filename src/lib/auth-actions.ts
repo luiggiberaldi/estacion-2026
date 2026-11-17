@@ -10,7 +10,8 @@
 // en admin-session.ts.
 
 import { cookies, headers } from "next/headers";
-import { sessionCookieName } from "./session";
+import { sessionCookieName, signTrusted, trustedCookieName, trustedMaxAgeSeconds, verifyTrusted } from "./session";
+import { isBreakglassIp } from "./login-guard";
 import { currentSessionEmail, pinMatches, setSessionCookie } from "./admin-session";
 import { isLoginBlocked, loadAdminPin, recordLoginFailure } from "./settings-store";
 
@@ -52,7 +53,13 @@ export async function loginAction(
   }
 
   const ip = await clientIp();
-  const blocked = await isLoginBlocked(ip);
+  // Equipo conocido (em_trusted con el PIN vigente) o IP de emergencia: no lo
+  // frena el tope GLOBAL, para que un ataque repartido no deje fuera al admin.
+  // El tope por IP (base y memoria) se aplica siempre.
+  const jar = await cookies();
+  const trusted = await verifyTrusted(jar.get(trustedCookieName())?.value, secret, current.version);
+  const skipGlobal = trusted || isBreakglassIp(ip, process.env.ADMIN_BREAKGLASS_IPS);
+  const blocked = await isLoginBlocked(ip, { skipGlobal });
   if (blocked || throttled(`login:${ip}`)) {
     return { ok: false, error: "Demasiados intentos. Espera unos minutos." };
   }
@@ -66,11 +73,20 @@ export async function loginAction(
   }
 
   await setSessionCookie(secret, current.version);
+  jar.set(trustedCookieName(), await signTrusted(secret, current.version), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: trustedMaxAgeSeconds(),
+  });
   return { ok: true };
 }
 
 export async function logoutAction(): Promise<void> {
   const jar = await cookies();
+  // Solo la sesión: em_trusted es del equipo y se conserva (deja de valer
+  // sola si cambia el PIN).
   jar.delete(sessionCookieName());
 }
 
