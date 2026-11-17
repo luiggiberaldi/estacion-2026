@@ -17,6 +17,9 @@ import {
   Send,
   RotateCw,
   Copy,
+  Link2,
+  Link2Off,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,6 +54,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatRelative, formatDate, shortDeviceId } from "@/lib/utils";
 import { getDevices, updateDeviceAlias, requestBackup, sendRemoteReloadCommand } from "@/lib/actions";
+import {
+  getDeviceCredentialStatuses,
+  issueDeviceClaimCode,
+  revokeDeviceCredential,
+  type DeviceCredentialStatus,
+  type IssuedClaimCode,
+} from "@/lib/credential-actions";
 
 import type { Device, DevicePlatform } from "@/lib/types";
 import { productName, sharesStationCloud } from "@/lib/products";
@@ -92,6 +102,13 @@ export function DevicesView() {
   const [aliasTarget, setAliasTarget] = useState<Device | null>(null);
   const [aliasValue, setAliasValue] = useState("");
   const [savingAlias, setSavingAlias] = useState(false);
+  // Vinculación de respaldo por equipo (credencial propia para el relay).
+  const [credStatus, setCredStatus] = useState<Record<string, DeviceCredentialStatus>>({});
+  const [claim, setClaim] = useState<(IssuedClaimCode & { label: string }) | null>(null);
+  const [claimLoading, setClaimLoading] = useState<string | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<Device | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const seqRef = useRef(0);
   const fetchDevices = async (showLoading = true) => {
@@ -101,6 +118,13 @@ export function DevicesView() {
       const data = await getDevices(productId);
       if (seq !== seqRef.current) return;
       setDevices(data);
+      if (sharesStationCloud(productId)) {
+        getDeviceCredentialStatuses()
+          .then((st) => { if (seq === seqRef.current) setCredStatus(st); })
+          .catch(() => { /* sin migración 004/008: la vista sigue funcionando */ });
+      } else {
+        setCredStatus({});
+      }
     } catch (err: any) {
       if (seq !== seqRef.current) return;
       toast({
@@ -208,6 +232,54 @@ export function DevicesView() {
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
+    }
+  }
+
+  // Cuenta atrás del código abierto.
+  useEffect(() => {
+    if (!claim) return;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [claim]);
+
+  async function handleIssueClaim(d: Device) {
+    setClaimLoading(d.deviceId);
+    try {
+      const issued = await issueDeviceClaimCode(d.deviceId);
+      setNowTick(Date.now());
+      setClaim({ ...issued, label: d.alias ?? d.businessName ?? shortDeviceId(d.deviceId) });
+    } catch (err: any) {
+      toast({ title: "No se pudo generar el código", description: err.message || "Error de servidor", variant: "destructive" });
+    } finally {
+      setClaimLoading(null);
+    }
+  }
+
+  async function handleCopyClaim() {
+    if (!claim) return;
+    try {
+      await navigator.clipboard.writeText(claim.code);
+      toast({ title: "Código copiado", description: "Pásaselo al dueño de la caja." });
+    } catch {
+      toast({ title: "No se pudo copiar", description: claim.code, variant: "destructive" });
+    }
+  }
+
+  async function handleUnlink() {
+    if (!unlinkTarget) return;
+    setUnlinking(true);
+    try {
+      await revokeDeviceCredential(unlinkTarget.deviceId);
+      toast({
+        title: "Vínculo de respaldo quitado",
+        description: `${unlinkTarget.alias ?? unlinkTarget.deviceId} ya no puede usar la vía de emergencia hasta que se vincule de nuevo.`,
+      });
+      setUnlinkTarget(null);
+      fetchDevices(false);
+    } catch (err: any) {
+      toast({ title: "No se pudo quitar el vínculo", description: err.message || "Error de servidor", variant: "destructive" });
+    } finally {
+      setUnlinking(false);
     }
   }
 
@@ -321,6 +393,14 @@ export function DevicesView() {
                       {d.alias ?? (
                         <span className="text-muted-foreground italic">Sin alias</span>
                       )}
+                      {credStatus[d.deviceId]?.linked && (
+                        <span
+                          className="ml-2 inline-flex items-center gap-1 rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-medium text-success align-middle"
+                          title="Esta caja tiene su propia llave para la vía de emergencia de respaldos"
+                        >
+                          <ShieldCheck className="size-3" /> Respaldo vinculado
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {d.businessName ?? "—"}
@@ -395,6 +475,19 @@ export function DevicesView() {
                           <DropdownMenuItem disabled={!sharesStationCloud(productId)} onClick={() => handleRemoteReload(d)}>
                             <RotateCw className="size-4 text-sky-500" /> Recargar POS Remoto
                           </DropdownMenuItem>
+                          {sharesStationCloud(productId) && (
+                            <>
+                              <DropdownMenuItem disabled={claimLoading === d.deviceId} onClick={() => handleIssueClaim(d)}>
+                                <Link2 className="size-4 text-primary" />
+                                {credStatus[d.deviceId]?.linked ? "Nuevo código de respaldo" : "Vincular respaldo"}
+                              </DropdownMenuItem>
+                              {credStatus[d.deviceId]?.linked && (
+                                <DropdownMenuItem onClick={() => setUnlinkTarget(d)}>
+                                  <Link2Off className="size-4 text-destructive" /> Quitar vínculo de respaldo
+                                </DropdownMenuItem>
+                              )}
+                            </>
+                          )}
                           <DropdownMenuSeparator />
 
                           <div className="px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -578,6 +671,71 @@ export function DevicesView() {
               ) : (
                 "Guardar alias"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog código de vinculación de respaldo ── */}
+      <Dialog open={!!claim} onOpenChange={(o) => { if (!o) { setClaim(null); fetchDevices(false); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="size-5 text-primary" /> Vincular respaldo
+            </DialogTitle>
+            <DialogDescription>
+              Código para <strong>{claim?.label}</strong>. Sirve una sola vez y solo para esta caja.
+            </DialogDescription>
+          </DialogHeader>
+          {claim && (() => {
+            const left = Math.max(0, new Date(claim.expiresAt).getTime() - nowTick);
+            const mm = Math.floor(left / 60000);
+            const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, "0");
+            return (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-border/60 bg-secondary/40 py-5 text-center">
+                  <p className="font-mono text-3xl font-semibold tracking-[0.25em] text-foreground select-all">
+                    {left > 0 ? claim.code : "VENCIDO"}
+                  </p>
+                  <p className={cn("mt-2 text-xs", left > 0 ? "text-muted-foreground" : "text-destructive")}>
+                    {left > 0 ? `Vence en ${mm}:${ss}` : "Genera uno nuevo desde el menú del equipo."}
+                  </p>
+                </div>
+                <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+                  <li>En la caja: <strong>Ajustes → Sistema → Respaldo en la nube</strong>.</li>
+                  <li>Escribe el código en <strong>«Código de vinculación»</strong> y pulsa <strong>Vincular</strong>.</li>
+                  <li>Al terminar, esta caja aparecerá aquí como <strong>Respaldo vinculado</strong>.</li>
+                </ol>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setClaim(null); fetchDevices(false); }}>
+              Cerrar
+            </Button>
+            <Button onClick={handleCopyClaim} disabled={!claim || new Date(claim.expiresAt).getTime() <= nowTick}>
+              <Copy className="size-4" /> Copiar código
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog quitar vínculo de respaldo ── */}
+      <Dialog open={!!unlinkTarget} onOpenChange={(o) => { if (!o && !unlinking) setUnlinkTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Quitar el vínculo de respaldo?</DialogTitle>
+            <DialogDescription>
+              {unlinkTarget?.alias ?? unlinkTarget?.deviceId} dejará de poder usar la vía de emergencia de
+              respaldos hasta que lo vincules otra vez con un código nuevo. Su respaldo normal no cambia.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnlinkTarget(null)} disabled={unlinking}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleUnlink} disabled={unlinking}>
+              {unlinking ? <><Loader2 className="size-4 animate-spin" /> Quitando…</> : "Sí, quitar vínculo"}
             </Button>
           </DialogFooter>
         </DialogContent>
