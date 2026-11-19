@@ -520,3 +520,27 @@ que aplicar el `GRANT` de reversión de
 `supabase/production-drafts/20261024_notifications_revoke_service_role.sql`
 (en el repo del POS), o las escrituras —incluido `markAllRead`— siguen cayendo
 con 42501.
+
+---
+
+## 2026-11-19 — Auditoría por pestañas: 5 arreglos de prioridad 1
+
+Origen: `AUDITORIA-PESTANAS-ESTACION-2026-11-18.md` (raíz de la suite).
+
+1. **Licencias · pestaña «Mensuales»**: las mensualidades no salían en ninguna
+   pestaña. Se muestra en Farmacia o si el producto ya tiene alguna.
+2. **Demos · extender una vencida**: el botón estaba desactivado justo para las
+   vencidas. Ahora dice «Reactivar Nd» y cuenta desde hoy.
+3. **Cliente y notas se guardan** en `cloud_licenses.client_name` / `notes`
+   (migración `docs/migrations/011-cliente-y-notas-licencia.sql`: **aplicada en staging** `tdfcpwctvumbdjmifypd` el 2026-11-19 y en **producción** `sodgzkablshladvbtnes` el mismo día; verificada en ambas, en producción solo con lecturas: 588 filas intactas, PostgREST ya ve las columnas).
+   Sin la 011 la licencia se guarda igual y se avisa con un toast que el cliente
+   y las notas no se guardaron. «Cliente» muestra el nombre real; el código
+   `CLI-…` pasa a `clientCode` (detalle de licencia y `{codigo}` de Mensajes).
+   Nuevo campo «Notas» al generar licencia.
+4. **Mensualidades sin datos inventados**: fuera «Método» (siempre Pago móvil),
+   «Meses» y «Último pago». Se muestran «Cliente desde» y el fin de la gracia.
+5. **Fuera lo siempre vacío**: Plataforma, Versión y RIF (Dispositivos, Demos,
+   detalle de licencia), código de compartir (Respaldos) y el indicador fijo
+   «Sistema en línea».
+
+`tsc`, `eslint` y `vitest` (255/255) en verde. Sin commit ni deploy.

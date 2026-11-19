@@ -3,8 +3,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Smartphone,
-  Globe,
-  MonitorSmartphone,
   MoreHorizontal,
   Eye,
   Tag,
@@ -62,7 +60,7 @@ import {
   type IssuedClaimCode,
 } from "@/lib/credential-actions";
 
-import type { Device, DevicePlatform } from "@/lib/types";
+import type { Device } from "@/lib/types";
 import { productName, sharesStationCloud } from "@/lib/products";
 import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
@@ -71,23 +69,6 @@ import { PaginationBar } from "@/components/ui/pagination-bar";
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-const PLATFORM_META: Record<
-  DevicePlatform,
-  { label: string; icon: typeof Smartphone; className: string }
-> = {
-  android: { label: "Android", icon: Smartphone, className: "bg-success/15 text-success border-transparent" },
-  pwa: { label: "PWA", icon: Globe, className: "bg-primary/15 text-primary border-transparent" },
-  ios: { label: "iOS", icon: Smartphone, className: "bg-secondary text-secondary-foreground border-transparent" },
-  desktop: { label: "Desktop", icon: MonitorSmartphone, className: "bg-secondary text-secondary-foreground border-transparent" },
-};
-
-/** Plataforma desconocida: la BD no la registra, no se fabrica. */
-const PLATFORM_UNKNOWN = {
-  label: "—",
-  icon: Smartphone,
-  className: "bg-secondary text-muted-foreground border-transparent",
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vista principal
@@ -331,8 +312,6 @@ export function DevicesView() {
               <TableHead className="pl-4 min-w-[110px]">Dispositivo</TableHead>
               <TableHead className="min-w-[140px]">Alias</TableHead>
               <TableHead className="min-w-[150px]">Negocio</TableHead>
-              <TableHead>Plataforma</TableHead>
-              <TableHead>Versión</TableHead>
               <TableHead className="min-w-[110px]">Registrado</TableHead>
               <TableHead className="min-w-[120px]">Última conexión</TableHead>
               <TableHead className="text-center">Online</TableHead>
@@ -345,7 +324,7 @@ export function DevicesView() {
             {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 9 }).map((__, j) => (
+                  {Array.from({ length: 7 }).map((__, j) => (
                     <TableCell key={j} className="py-3">
                       <Skeleton className="h-4 w-full max-w-[100px]" />
                     </TableCell>
@@ -354,7 +333,7 @@ export function DevicesView() {
               ))
             ) : devices.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="py-12">
+                <TableCell colSpan={7} className="py-12">
                   <div className="flex flex-col items-center text-center">
                     <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground mb-3">
                       <Inbox className="size-5" strokeWidth={1.5} />
@@ -370,8 +349,6 @@ export function DevicesView() {
               </TableRow>
             ) : (
               paginatedDevices.map((d) => {
-                const pm = d.platform ? PLATFORM_META[d.platform] : PLATFORM_UNKNOWN;
-                const PmIcon = pm.icon;
                 return (
                   <TableRow key={d.id} className="group">
                     <TableCell className="pl-4 font-mono text-xs text-foreground whitespace-nowrap">
@@ -404,20 +381,6 @@ export function DevicesView() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {d.businessName ?? "—"}
-                      {d.rif && (
-                        <span className="block text-[10px] font-mono text-muted-foreground/80">
-                          {d.rif}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("gap-1", pm.className)}>
-                        <PmIcon className="size-3" />
-                        {pm.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground font-mono">
-                      v{d.appVersion ?? "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDate(d.registeredAt, { day: "2-digit", month: "short" })}
@@ -535,14 +498,8 @@ export function DevicesView() {
                 <Detail label="Dispositivo" value={detail.deviceId} mono />
                 <Detail label="Alias" value={detail.alias ?? "—"} />
                 <Detail label="Negocio" value={detail.businessName ?? "—"} />
-                <Detail label="RIF" value={detail.rif ?? "—"} mono />
                 <Detail label="Cliente" value={detail.clientName ?? "—"} />
                 <Detail label="Teléfono" value={detail.clientPhone ?? "—"} mono />
-                <Detail
-                  label="Plataforma"
-                  value={detail.platform ? PLATFORM_META[detail.platform].label : "—"}
-                />
-                <Detail label="App versión" value={`v${detail.appVersion ?? "—"}`} mono />
                 <Detail label="Registrado" value={formatDate(detail.registeredAt)} />
                 <Detail
                   label="Última conexión"

@@ -260,10 +260,6 @@ export function AdminShell({ activeView, onViewChange, children }: AdminShellPro
 
           <div className="ml-auto flex items-center gap-2">
             <NotificationBell onSeeAll={() => onViewChange("notifications")} />
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-1.5">
-              <span className="size-2 rounded-full bg-success animate-pulse" />
-              <span className="text-xs font-medium text-muted-foreground">Sistema en línea</span>
-            </div>
           </div>
         </header>
 

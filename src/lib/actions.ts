@@ -146,7 +146,8 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       deviceId: l.device_id,
       productId: l.product_id ?? productId,
       alias: businessName,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
+      clientCode: structuredClientCode,
       clientPhone: cl.phone || null,
       marketingEmail,
       type: l.type as LicenseType,
@@ -156,9 +157,6 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       expiresAt: l.expires_at || null,
       lastSeenAt: deviceLastSeen,
       activatedAt: l.created_at || null,
-      // Sin columnas de plataforma/versión en account_devices: no fabricar.
-      appVersion: null,
-      platform: null,
       isOnline: deriveIsOnline(deviceLastSeen),
       notes: cl.notes || null,
     };
@@ -189,8 +187,6 @@ export async function getDemos(productId: ProductId = "bodega"): Promise<Demo[]>
         expiresAt: l.expiresAt || "",
         daysRemaining,
         isOnline: l.isOnline,
-        appVersion: l.appVersion,
-        platform: l.platform,
       };
     });
 }
@@ -206,7 +202,8 @@ export async function createOrUpdateLicense(licenseData: {
   status?: LicenseStatus;
   /** Producto comercial. Default 'bodega' (Lite) por compatibilidad. */
   productId?: ProductId;
-}): Promise<void> {
+}): Promise<{ warning?: string }> {
+  let warning: string | undefined;
   await requireAdmin();
   if (!licenseData || !licenseData.deviceId || typeof licenseData.deviceId !== "string") {
     throw new Error("El ID del dispositivo es obligatorio.");
@@ -225,6 +222,7 @@ export async function createOrUpdateLicense(licenseData: {
   }
   for (const [field, value, max] of [
     ["alias", licenseData.alias, 120],
+    ["cliente", licenseData.clientName, 120],
     ["teléfono", licenseData.clientPhone, 40],
     ["notas", licenseData.notes, 1000],
   ] as const) {
@@ -356,32 +354,40 @@ export async function createOrUpdateLicense(licenseData: {
     businessNameField = `${businessNameField} | ${prevMarketingEmail}`;
   }
 
-  if (existingCl) {
-    const { error } = await admin
-      .from("cloud_licenses")
-      .update({
-        email: email,
-        license_type: licenseData.type,
-        business_name: businessNameField,
-        phone: phone,
-        is_active: isActive,
-        updated_at: now
-      })
-      .eq("id", existingCl.id);
-    clErr = error;
-  } else {
-    const { error } = await admin
-      .from("cloud_licenses")
-      .insert({
-        device_id: deviceId,
-        email: email,
-        license_type: licenseData.type,
-        business_name: businessNameField,
-        phone: phone,
-        is_active: isActive,
-        updated_at: now
-      });
-    clErr = error;
+  // Cliente y notas (migración 011): solo se escriben si el formulario trae un
+  // valor; las acciones rápidas (cambiar tipo, extender) no los tocan.
+  const extras: Record<string, string> = {};
+  const clientName = licenseData.clientName?.trim();
+  const notes = licenseData.notes?.trim();
+  if (clientName) extras.client_name = clientName;
+  if (notes) extras.notes = notes;
+
+  const writeCloudLicense = async (fields: Record<string, unknown>) => {
+    if (existingCl) {
+      const { error } = await admin.from("cloud_licenses").update(fields).eq("id", existingCl.id);
+      return error;
+    }
+    const { error } = await admin.from("cloud_licenses").insert({ device_id: deviceId, ...fields });
+    return error;
+  };
+  const baseFields = {
+    email: email,
+    license_type: licenseData.type,
+    business_name: businessNameField,
+    phone: phone,
+    is_active: isActive,
+    updated_at: now,
+  };
+
+  clErr = await writeCloudLicense({ ...baseFields, ...extras });
+  if (clErr && Object.keys(extras).length > 0 && isMissingColumnError(clErr)) {
+    // Sin la migración 011 la licencia se guarda igual, pero se avisa en vez
+    // de descartar el cliente y las notas en silencio.
+    clErr = await writeCloudLicense(baseFields);
+    if (!clErr) {
+      warning =
+        "La licencia se guardó, pero el cliente y las notas no: falta aplicar la migración 011 en la base.";
+    }
   }
 
   if (clErr) throw new Error(`Error al guardar en cloud_licenses: ${clErr.message}`);
@@ -398,6 +404,12 @@ export async function createOrUpdateLicense(licenseData: {
       productId
     );
   }
+  return warning ? { warning } : {};
+}
+
+/** Columna desconocida para PostgREST (caché de esquema) o para Postgres. */
+function isMissingColumnError(err: { code?: string; message?: string }): boolean {
+  return err.code === "PGRST204" || err.code === "42703";
 }
 
 /** Cambia solo el alias comercial (business_name), conservando el email de marketing. */
@@ -526,10 +538,11 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
   // 2. Obtener licencias para extraer alias y nombre de cliente (solo de esos equipos)
   const dbCloudLicenses = await selectInBatches<any>(
     dbBackups.map((b: any) => b.device_id as string),
+    // "*": client_name solo existe tras la migración 011.
     (batch) =>
       admin
         .from("cloud_licenses")
-        .select("id, device_id, business_name, email, created_at")
+        .select("*")
         .in("device_id", batch)
         .order("id", { ascending: true }),
     "Error al obtener metadatos"
@@ -551,16 +564,12 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
-    // Structured client code
-    const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
-    const last4 = b.device_id ? b.device_id.slice(-4).toUpperCase() : '0000';
-    const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
     return {
       id: b.id,
       deviceId: b.device_id,
       alias: businessName,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
       marketingEmail: marketingEmail || b.email || null,
       driveUrl: b.drive_url || null,
       sizeBytes: Number(b.size_bytes || 0),
@@ -569,7 +578,6 @@ export async function getBackups(productId?: ProductId): Promise<Backup[]> {
       productCount: Number(b.product_count || 0),
       salesCount: Number(b.sales_count || 0),
       customerCount: Number(b.customer_count || 0),
-      shareCode: null,
     };
   });
 }
@@ -944,7 +952,7 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
     (batch) =>
       admin
         .from("cloud_licenses")
-        .select("id, device_id, phone, business_name, created_at")
+        .select("*") // client_name solo existe tras la migración 011
         .in("device_id", batch)
         .order("id", { ascending: true }),
     "Error al obtener metadatos"
@@ -957,27 +965,19 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
-    // Structured client code
-    const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
-    const last4 = d.device_id ? d.device_id.slice(-4).toUpperCase() : '0000';
-    const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
     return {
       id: d.id,
       deviceId: d.device_id,
       alias: d.device_alias || null,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
       clientPhone: cl.phone || null,
       email: d.email || null,
       marketingEmail,
-      // account_devices no tiene columnas de plataforma/versión: no fabricar.
-      platform: null,
-      appVersion: null,
       registeredAt: d.created_at,
       lastSeenAt: d.last_seen || null,
       isOnline: deriveIsOnline(d.last_seen),
       businessName: businessName || null,
-      rif: null,
     };
   });
 }

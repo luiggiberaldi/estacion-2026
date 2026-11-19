@@ -2,10 +2,8 @@
 
 export type LicenseType = "permanent" | "demo7" | "demo3" | "monthly" | "revoked" | "registered";
 export type LicenseStatus = "active" | "expired" | "revoked" | "pending";
-export type DevicePlatform = "android" | "ios" | "pwa" | "desktop";
 export type BackupStatus = "completed" | "failed" | "in_progress";
 export type SubscriptionStatus = "current" | "expired" | "grace_period" | "cancelled";
-export type PaymentMethod = "pago_movil" | "transferencia" | "zelle" | "efectivo_usd" | "binance";
 
 /** Licencia de un dispositivo. */
 export interface License {
@@ -14,7 +12,10 @@ export interface License {
   /** Discriminador comercial: 'bodega' (Lite) | 'farmacia' (Farmacia) | 'pro' (Pro). */
   productId: string;
   alias: string | null;
+  /** Nombre real del cliente (cloud_licenses.client_name). Null = no registrado. */
   clientName: string | null;
+  /** Referencia derivada CLI-AAAAMMDD-XXXX (fecha de alta + final del ID). No es un nombre. */
+  clientCode: string;
   clientPhone: string | null;
   marketingEmail?: string | null;
   type: LicenseType;
@@ -24,9 +25,6 @@ export interface License {
   expiresAt: string | null;
   lastSeenAt: string | null;
   activatedAt: string | null;
-  appVersion: string | null;
-  /** Plataforma real del dispositivo. Null = desconocida (no se fabrica). */
-  platform: DevicePlatform | null;
   isOnline: boolean;
   notes: string | null;
 }
@@ -46,9 +44,6 @@ export interface Demo {
   expiresAt: string;
   daysRemaining: number;
   isOnline: boolean;
-  appVersion: string | null;
-  /** Null = desconocida (no se fabrica). */
-  platform: DevicePlatform | null;
 }
 
 /** Backup de un dispositivo (cloud_backups). */
@@ -65,7 +60,6 @@ export interface Backup {
   productCount: number;
   salesCount: number;
   customerCount: number;
-  shareCode: string | null;
 }
 
 /** Mensualidad / suscripción recurrente. */
@@ -77,12 +71,9 @@ export interface Subscription {
   clientPhone: string | null;
   status: SubscriptionStatus;
   amountUsd: number;
-  paymentMethod: PaymentMethod;
   startDate: string;
   /** null = el backend no registra fecha de vencimiento (no se fabrica una). */
   dueDate: string | null;
-  lastPaymentDate: string | null;
-  monthsPaid: number;
   gracePeriodEndsAt: string | null;
   notes: string | null;
 }
@@ -96,14 +87,10 @@ export interface Device {
   clientPhone: string | null;
   email: string | null;
   marketingEmail?: string | null;
-  /** Plataforma real del dispositivo. Null = desconocida (no se fabrica). */
-  platform: DevicePlatform | null;
-  appVersion: string | null;
   registeredAt: string;
   lastSeenAt: string | null;
   isOnline: boolean;
   businessName: string | null;
-  rif: string | null;
 }
 
 /** Estadísticas para el dashboard. */

@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Eye,
   Download,
-  Copy,
   Inbox,
   CheckCircle2,
   XCircle,
@@ -45,7 +44,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -313,30 +311,6 @@ export function BackupsView() {
       });
     } finally {
       setExtractingId(null);
-    }
-  }
-
-  async function handleCopyShare(bkp: Backup) {
-    if (!bkp.shareCode) {
-      toast({
-        title: "Sin código de compartir",
-        description: "Este respaldo no tiene share code asignado.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(bkp.shareCode);
-      toast({
-        title: "Código copiado",
-        description: `${bkp.shareCode} · ${bkp.alias ?? bkp.deviceId}`,
-      });
-    } catch {
-      toast({
-        title: "No se pudo copiar",
-        description: "El portapapeles no está disponible.",
-        variant: "destructive",
-      });
     }
   }
 
@@ -740,16 +714,6 @@ export function BackupsView() {
                                 <Download className="size-4" /> Extraer respaldo
                               </DropdownMenuItem>
                             ) : null}
-                            <DropdownMenuItem
-                              onClick={() => handleCopyShare(bkp)}
-                              disabled={!bkp.shareCode}
-                            >
-                              <Copy className="size-4" /> Copiar código share
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <div className="px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                              Share: {bkp.shareCode ?? "—"}
-                            </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -802,7 +766,6 @@ export function BackupsView() {
                   value={STATUS_META[detail.status].label}
                 />
                 <Detail label="Creado" value={formatDate(detail.createdAt)} />
-                <Detail label="Share code" value={detail.shareCode ?? "—"} mono />
               </div>
               {detail.status === "completed" && (
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -818,14 +781,6 @@ export function BackupsView() {
                     )}
                     Extraer JSON
                   </Button>
-                  {detail.shareCode && (
-                    <Button
-                      variant="outline"
-                      onClick={() => handleCopyShare(detail)}
-                    >
-                      <Copy className="size-4" /> Copiar share
-                    </Button>
-                  )}
                 </div>
               )}
             </div>

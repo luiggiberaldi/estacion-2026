@@ -9,11 +9,6 @@ import {
   CheckCircle2,
   CalendarPlus,
   Ban,
-  CreditCard,
-  Wallet,
-  Banknote,
-  Smartphone,
-  Bitcoin,
   Inbox,
   Loader2,
 } from "lucide-react";
@@ -48,12 +43,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { cn, formatCurrency, formatDate, formatRelative } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 import { getLicenses, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
 import { useProduct } from "@/lib/product-context";
 import { useSettings } from "@/lib/settings-context";
-import type { Subscription, SubscriptionStatus, PaymentMethod } from "@/lib/types";
+import type { Subscription, SubscriptionStatus } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -69,17 +64,6 @@ const STATUS_META: Record<
   grace_period: { label: "Período gracia", className: "bg-warning/15 text-warning border-transparent" },
   expired: { label: "Expirada", className: "bg-destructive/15 text-destructive border-transparent" },
   cancelled: { label: "Cancelada", className: "bg-secondary text-muted-foreground border-transparent" },
-};
-
-const PAYMENT_META: Record<
-  PaymentMethod,
-  { label: string; icon: typeof CreditCard }
-> = {
-  pago_movil: { label: "Pago móvil", icon: Smartphone },
-  transferencia: { label: "Transferencia", icon: CreditCard },
-  zelle: { label: "Zelle", icon: Wallet },
-  efectivo_usd: { label: "Efectivo USD", icon: Banknote },
-  binance: { label: "Binance", icon: Bitcoin },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,11 +113,8 @@ export function SubscriptionsView() {
             clientPhone: l.clientPhone,
             status: status as Subscription["status"],
             amountUsd: monthlyPrice,
-            paymentMethod: "pago_movil" as Subscription["paymentMethod"],
             startDate: l.createdAt,
             dueDate,
-            lastPaymentDate: l.activatedAt || null,
-            monthsPaid: Math.max(1, Math.floor((Date.now() - new Date(l.createdAt).getTime()) / (30 * 86400000))),
             gracePeriodEndsAt: status === "grace_period" && dueDate ? new Date(new Date(dueDate).getTime() + monthlyGraceDays * 86400000).toISOString() : null,
             notes: l.notes,
           };
@@ -320,9 +301,8 @@ export function SubscriptionsView() {
               <TableHead className="min-w-[140px]">Alias</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Monto</TableHead>
-              <TableHead>Método</TableHead>
               <TableHead className="min-w-[120px]">Próximo venc.</TableHead>
-              <TableHead>Meses</TableHead>
+              <TableHead className="min-w-[110px]">Cliente desde</TableHead>
               <TableHead className="text-right pr-4">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -330,7 +310,7 @@ export function SubscriptionsView() {
             {isLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((__, j) => (
+                  {Array.from({ length: 7 }).map((__, j) => (
                     <TableCell key={j} className="py-3">
                       <Skeleton className="h-4 w-full max-w-[110px]" />
                     </TableCell>
@@ -339,7 +319,7 @@ export function SubscriptionsView() {
               ))
             ) : subs.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="py-12">
+                <TableCell colSpan={7} className="py-12">
                   <div className="flex flex-col items-center text-center">
                     <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground mb-3">
                       <Inbox className="size-5" strokeWidth={1.5} />
@@ -356,8 +336,6 @@ export function SubscriptionsView() {
             ) : (
               paginatedSubs.map((sub) => {
                 const sm = STATUS_META[sub.status];
-                const pm = PAYMENT_META[sub.paymentMethod];
-                const PmIcon = pm.icon;
                 const isCancelled = sub.status === "cancelled";
                 const isPending = pendingId === sub.id;
                 return (
@@ -385,12 +363,6 @@ export function SubscriptionsView() {
                     <TableCell className="text-sm font-medium text-foreground tabular-nums">
                       {formatCurrency(sub.amountUsd)}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <PmIcon className="size-3.5 shrink-0" />
-                        <span>{pm.label}</span>
-                      </div>
-                    </TableCell>
                     <TableCell className="text-xs">
                       <div className="flex flex-col">
                         <span className="text-foreground">
@@ -398,15 +370,15 @@ export function SubscriptionsView() {
                             ? formatDate(sub.dueDate, { day: "2-digit", month: "short", year: "numeric" })
                             : "—"}
                         </span>
-                        {sub.lastPaymentDate && (
-                          <span className="text-muted-foreground">
-                            últ. pago {formatRelative(sub.lastPaymentDate)}
+                        {sub.gracePeriodEndsAt && (
+                          <span className="text-warning">
+                            gracia hasta {formatDate(sub.gracePeriodEndsAt, { day: "2-digit", month: "short" })}
                           </span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground tabular-nums">
-                      {sub.monthsPaid}
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(sub.startDate, { day: "2-digit", month: "short", year: "numeric" })}
                     </TableCell>
                     <TableCell className="text-right pr-4">
                       <div className="flex items-center justify-end gap-1">

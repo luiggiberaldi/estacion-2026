@@ -148,8 +148,6 @@ export function DashboardView() {
               expiresAt: l.expiresAt || "",
               daysRemaining,
               isOnline: l.isOnline,
-              appVersion: null,
-              platform: null,
             };
           });
         setDemos(activeDemos);

@@ -7,9 +7,6 @@ import {
   CalendarPlus,
   Infinity as InfinityIcon,
   Ban,
-  Smartphone,
-  Globe,
-  MonitorSmartphone,
   Inbox,
   Loader2,
 } from "lucide-react";
@@ -35,7 +32,7 @@ import { cn, formatDate, formatRelative } from "@/lib/utils";
 import { getDemos, createOrUpdateLicense, revokeLicense } from "@/lib/actions";
 import { useProduct } from "@/lib/product-context";
 import { useSettings } from "@/lib/settings-context";
-import type { Demo, DevicePlatform } from "@/lib/types";
+import type { Demo } from "@/lib/types";
 import { usePagination } from "@/hooks/usePagination";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 
@@ -52,13 +49,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "expired", label: "Expiradas" },
   { key: "revoked", label: "Revocadas" },
 ];
-
-const PLATFORM_ICON: Record<DevicePlatform, typeof Smartphone> = {
-  android: Smartphone,
-  pwa: Globe,
-  ios: Smartphone,
-  desktop: MonitorSmartphone,
-};
 
 function progressTone(days: number): string {
   if (days > 4) return "[&>[data-slot=progress-indicator]]:bg-success";
@@ -304,7 +294,6 @@ export function DemosView() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedDemos.map((demo) => {
-            const PlatformIcon = demo.platform ? PLATFORM_ICON[demo.platform] : Smartphone;
             const isRevoked = demo.status === "revoked";
             // Duración de la demo: la automática (demo3) usa los días de Ajustes;
             // la regalada/extendida (demo7) los días de extensión.
@@ -366,11 +355,6 @@ export function DemosView() {
                   </div>
 
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                    <PlatformIcon className="size-3" />
-                    <span className="uppercase">{demo.platform ?? "—"}</span>
-                    <span className="text-muted-foreground/60">·</span>
-                    <span>v{demo.appVersion ?? "—"}</span>
-                    <span className="text-muted-foreground/60">·</span>
                     <span className="flex items-center gap-1">
                       <span
                         className={cn(
@@ -389,15 +373,21 @@ export function DemosView() {
                       variant="outline"
                       className="flex-1 h-8 text-xs"
                       onClick={() => handleExtend(demo)}
-                      disabled={isPending || isExpired || isRevoked}
-                      title={isRevoked ? "La demo está revocada" : undefined}
+                      disabled={isPending || isRevoked}
+                      title={
+                        isRevoked
+                          ? "La demo está revocada"
+                          : isExpired
+                            ? `Reactiva la demo por ${demoExtensionDays} días desde hoy`
+                            : undefined
+                      }
                     >
                       {isPending ? (
                         <Loader2 className="size-3.5 animate-spin" />
                       ) : (
                         <CalendarPlus className="size-3.5" />
                       )}
-                      Extender {demoExtensionDays}d
+                      {isExpired ? "Reactivar" : "Extender"} {demoExtensionDays}d
                     </Button>
                     <Button
                       size="sm"

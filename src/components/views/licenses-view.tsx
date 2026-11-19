@@ -87,6 +87,7 @@ type TabKey = "permanent" | "monthly" | "demo" | "revoked" | "registered";
 
 const TAB_CONFIG: { key: TabKey; label: string }[] = [
   { key: "permanent", label: "Permanentes" },
+  { key: "monthly", label: "Mensuales" },
   { key: "demo", label: "Demos" },
   { key: "revoked", label: "Revocadas" },
   { key: "registered", label: "Sin Licencia" },
@@ -219,6 +220,7 @@ export function LicensesView() {
   const [formAlias, setFormAlias] = useState("");
   const [formClient, setFormClient] = useState("");
   const [formPhone, setFormPhone] = useState("");
+  const [formNotes, setFormNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -390,7 +392,8 @@ export function LicensesView() {
       return (
         l.deviceId.toLowerCase().includes(q) ||
         (l.alias?.toLowerCase().includes(q) ?? false) ||
-        (l.clientName?.toLowerCase().includes(q) ?? false)
+        (l.clientName?.toLowerCase().includes(q) ?? false) ||
+        l.clientCode.toLowerCase().includes(q)
       );
     });
   }, [licenses, activeTab, demoSubTab, query]);
@@ -442,6 +445,15 @@ export function LicensesView() {
     return c;
   }, [licenses]);
 
+  // "Mensuales" solo donde se vende mensual (Farmacia) o ya hay mensualidades.
+  const visibleTabs = useMemo(
+    () => TAB_CONFIG.filter((t) => t.key !== "monthly" || offersMonthly(productId) || counts.monthly > 0),
+    [productId, counts.monthly]
+  );
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.key === activeTab)) setActiveTab("permanent");
+  }, [visibleTabs, activeTab]);
+
   // ── Handlers ──
 
   async function handleGenerate() {
@@ -461,13 +473,14 @@ export function LicensesView() {
     try {
       const expiresAt = expiresAtFor(formType, formDays);
 
-      await createOrUpdateLicense({
+      const { warning } = await createOrUpdateLicense({
         deviceId: formDeviceId.trim().toUpperCase(),
         type: formType,
         expiresAt,
         alias: formAlias.trim(),
         clientName: formClient.trim(),
         clientPhone: formPhone.trim(),
+        notes: formNotes.trim(),
         productId: AVAILABLE_PRODUCTS.find((product) => product.id === formProduct)?.id ?? PRODUCT_LITE.id,
       });
 
@@ -475,11 +488,13 @@ export function LicensesView() {
         title: "Licencia generada",
         description: `${TYPE_LABEL[formType]} ${productName(formProduct)} para ${formDeviceId.trim().toUpperCase()}`,
       });
+      if (warning) toast({ title: "Faltó guardar un dato", description: warning, variant: "destructive" });
       setGenerateOpen(false);
       setFormDeviceId("");
       setFormAlias("");
       setFormClient("");
       setFormPhone("");
+      setFormNotes("");
       setFormType("permanent");
       setFormDays(demoDays);
       await fetchLicenses(false);
@@ -679,7 +694,7 @@ export function LicensesView() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
         <TabsList className="w-full sm:w-auto overflow-x-auto justify-start">
-          {TAB_CONFIG.map((t) => (
+          {visibleTabs.map((t) => (
             <TabsTrigger key={t.key} value={t.key} className="gap-1.5">
               {t.label}
               <Badge
@@ -727,7 +742,7 @@ export function LicensesView() {
           </div>
         )}
 
-        {TAB_CONFIG.map((t) => (
+        {visibleTabs.map((t) => (
           <TabsContent key={t.key} value={t.key}>
             <Card className="border-border/60 shadow-tone-sm">
               <Table>
@@ -1013,6 +1028,20 @@ export function LicensesView() {
                   onChange={(e) => setFormPhone(e.target.value)}
                 />
               </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="gen-notes" className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Notas
+                </Label>
+                <textarea
+                  id="gen-notes"
+                  rows={2}
+                  maxLength={1000}
+                  placeholder="Forma de pago, referencia, quién lo recomendó…"
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {AVAILABLE_PRODUCTS.length > 1 && (
@@ -1111,6 +1140,7 @@ export function LicensesView() {
               <Detail label="Dispositivo" value={detailLic.deviceId} mono />
               <Detail label="Alias" value={detailLic.alias ?? "—"} />
               <Detail label="Cliente" value={detailLic.clientName ?? "—"} />
+              <Detail label="Código de cliente" value={detailLic.clientCode} mono />
               <Detail label="Teléfono" value={detailLic.clientPhone ?? "—"} />
               <Detail label="Email de Marketing" value={detailLic.marketingEmail ?? "—"} />
               <Detail label="Tipo" value={TYPE_LABEL[detailLic.type]} />
@@ -1120,8 +1150,6 @@ export function LicensesView() {
                 value={statusBadge(detailLic).label}
               />
               <Detail label="Código" value={detailLic.code} mono />
-              <Detail label="Plataforma" value={detailLic.platform?.toUpperCase() ?? "—"} />
-              <Detail label="App versión" value={detailLic.appVersion ?? "—"} />
               <Detail label="Online" value={detailLic.isOnline ? "En línea" : "Desconectado"} />
               <Detail label="Creada" value={formatDate(detailLic.createdAt)} />
               <Detail label="Activada" value={formatDate(detailLic.activatedAt)} />
