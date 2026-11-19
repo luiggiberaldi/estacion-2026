@@ -68,7 +68,7 @@ const NAV_ITEMS: NavItem[] = [
 const NAV_NUBE: NavItem[] = [
   { id: "nube-accounts", label: "Cuentas Nube", icon: Store, description: "Negocios, licencia, usuarios y equipos" },
   { id: "nube-devices", label: "Equipos Nube", icon: Smartphone, description: "Cajas y consultas PDN- conectadas" },
-  { id: "settings", label: "Ajustes", icon: Settings, description: "Precios, plazos, PIN y plantillas" },
+  { id: "settings", label: "Ajustes", icon: Settings, description: "Prueba de cuentas nuevas, PIN y plantillas" },
 ];
 
 export const STATION_VERSION = "v3.0";

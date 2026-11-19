@@ -544,3 +544,24 @@ Origen: `AUDITORIA-PESTANAS-ESTACION-2026-11-18.md` (raíz de la suite).
    «Sistema en línea».
 
 `tsc`, `eslint` y `vitest` (255/255) en verde. Sin commit ni deploy.
+
+---
+
+## 2026-11-19 — Nube: prueba por defecto configurable desde Ajustes
+
+luigi pidió configurar desde la zona Nube los días de prueba y los equipos por
+defecto de las cuentas nuevas (hasta ahora fijos en `create_account`: 15 días,
+2 cajas, migración Nube 011).
+
+- **Nube** (`precios al dia cloud/supabase/nube/migrations/015_ajustes_prueba_desde_estacion.sql`):
+  tabla `nube_settings` (una fila; `trial_days` 1–90, `trial_max_cajas` 1–20;
+  RLS sin permisos para anon/authenticated) y `create_account` la lee. Solo
+  afecta a cuentas nuevas. Probada en seco en `nube-pruebas` (transacción
+  deshecha) y **aplicada en `nube-pruebas` el 2026-11-19**: verificada (RLS, sin acceso de anon/authenticated, `create_account` nueva, la Estación la lee por la API).
+- **Estación**: `getNubeTrialSettings` / `updateNubeTrialSettings`
+  (`nube-actions.ts`, con `requireAdmin`), validación `validateNubeTrialDefaults`
+  (`nube-model.ts`, 3 tests nuevos) y pestaña «Prueba de la Nube» en Ajustes, que
+  en modo Nube sustituye a «Precios y plazos». Sin la 015 la pestaña avisa y no
+  deja guardar.
+
+`tsc`, `eslint` y `vitest` (258/258) en verde. Sin commit.

@@ -8,10 +8,13 @@ import { requireAdmin } from "./require-admin";
 import { getNubeAdmin, nubeConfigured, nubeProjectRef } from "./nube-supabase";
 import {
   buildNubeAccounts,
+  NUBE_TRIAL_FALLBACK,
   validateNubeLicenseInput,
+  validateNubeTrialDefaults,
   type NubeAccount,
   type NubeDevice,
   type NubeRawData,
+  type NubeTrialDefaults,
   type RawOwner,
   type RawSalesStat,
   type RawSession,
@@ -170,4 +173,65 @@ export async function updateNubeLicense(accountId: string, input: unknown): Prom
   };
   const { error } = await db.from("account_licenses").upsert(row, { onConflict: "account_id" });
   if (error) throw new Error(`Nube: ${error.message}`);
+}
+
+
+// ── Prueba por defecto de las cuentas nuevas (nube_settings, migración Nube 015) ──
+
+export interface NubeTrialSettings {
+  /** La Estación tiene las llaves de la Nube. */
+  configured: boolean;
+  /** La tabla nube_settings existe (migración 015 aplicada). */
+  available: boolean;
+  values: NubeTrialDefaults;
+  updatedAt: string | null;
+}
+
+/** Tabla inexistente para PostgREST (caché de esquema) o para Postgres. */
+function isMissingTable(err: { code?: string }): boolean {
+  return err.code === "PGRST205" || err.code === "42P01";
+}
+
+/** Días y equipos con los que create_account da la prueba a una cuenta nueva. */
+export async function getNubeTrialSettings(): Promise<NubeTrialSettings> {
+  await requireAdmin();
+  if (!nubeConfigured()) {
+    return { configured: false, available: false, values: NUBE_TRIAL_FALLBACK, updatedAt: null };
+  }
+  const { data, error } = await getNubeAdmin()
+    .from("nube_settings")
+    .select("trial_days, trial_max_cajas, updated_at")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) {
+      return { configured: true, available: false, values: NUBE_TRIAL_FALLBACK, updatedAt: null };
+    }
+    throw new Error(`Nube (ajustes): ${error.message}`);
+  }
+  if (!data) return { configured: true, available: true, values: NUBE_TRIAL_FALLBACK, updatedAt: null };
+  return {
+    configured: true,
+    available: true,
+    values: { trialDays: data.trial_days, trialMaxCajas: data.trial_max_cajas },
+    updatedAt: data.updated_at ?? null,
+  };
+}
+
+/** Cambia la prueba por defecto. Solo afecta a las cuentas que se creen después. */
+export async function updateNubeTrialSettings(input: unknown): Promise<NubeTrialSettings> {
+  await requireAdmin();
+  if (!nubeConfigured()) throw new Error("La Estación no está conectada a la Nube.");
+  const values = validateNubeTrialDefaults(input);
+  const { error } = await getNubeAdmin()
+    .from("nube_settings")
+    .upsert(
+      { id: 1, trial_days: values.trialDays, trial_max_cajas: values.trialMaxCajas, updated_at: new Date().toISOString() },
+      { onConflict: "id" }
+    );
+  if (error) {
+    if (isMissingTable(error)) throw new Error("Falta aplicar en la Nube la migración 015 (nube_settings).");
+    throw new Error(`Nube (ajustes): ${error.message}`);
+  }
+  return getNubeTrialSettings();
 }

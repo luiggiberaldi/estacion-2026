@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Cloud,
   KeyRound,
   Loader2,
   MessageSquare,
@@ -39,6 +40,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useProduct } from "@/lib/product-context";
+import { NubeTrialSettingsCard } from "@/components/views/nube-trial-settings";
 
 const TEXTAREA =
   "w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y";
@@ -67,6 +70,8 @@ function formatDateTime(iso: string | null): string {
 export function SettingsView() {
   const { settings, available, updatedAt, loading, refresh } = useSettings();
   const { toast } = useToast();
+  // En modo Nube, los precios y plazos de Bodega/Farmacia no aplican: se muestra la prueba de la Nube.
+  const isNube = useProduct().system === "nube";
   const [draft, setDraft] = useState<StationSettings>(settings);
   const [saving, setSaving] = useState(false);
 
@@ -144,9 +149,13 @@ export function SettingsView() {
         </Card>
       )}
 
-      <Tabs defaultValue="precios">
+      <Tabs key={isNube ? "nube" : "clasico"} defaultValue={isNube ? "nube" : "precios"}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="precios"><Tag className="size-4" /> Precios y plazos</TabsTrigger>
+          {isNube ? (
+            <TabsTrigger value="nube"><Cloud className="size-4" /> Prueba de la Nube</TabsTrigger>
+          ) : (
+            <TabsTrigger value="precios"><Tag className="size-4" /> Precios y plazos</TabsTrigger>
+          )}
           <TabsTrigger value="contacto"><Store className="size-4" /> Contacto</TabsTrigger>
           <TabsTrigger value="plantillas"><MessageSquare className="size-4" /> Plantillas</TabsTrigger>
           <TabsTrigger value="seguridad"><KeyRound className="size-4" /> PIN de acceso</TabsTrigger>
@@ -291,6 +300,13 @@ export function SettingsView() {
         <TabsContent value="seguridad">
           <PinCard />
         </TabsContent>
+
+        {/* ── Nube: prueba de las cuentas nuevas ── */}
+        {isNube && (
+          <TabsContent value="nube">
+            <NubeTrialSettingsCard />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Barra de guardado (precios, contacto y plantillas) */}

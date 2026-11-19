@@ -254,3 +254,35 @@ export function validateNubeLicenseInput(input: unknown): NubeLicenseInput {
   }
   return { status: v.status, maxCajas: cajas, maxSedes: sedes, expiresAt };
 }
+
+// ── Prueba por defecto de las cuentas nuevas (tabla nube_settings, migración Nube 015) ──
+
+export interface NubeTrialDefaults {
+  /** Días de prueba con los que nace una cuenta nueva. */
+  trialDays: number;
+  /** Equipos de caja que trae la prueba (los de consulta no cuentan). */
+  trialMaxCajas: number;
+}
+
+/** Límites: los mismos CHECK de la tabla en la base de la Nube. */
+export const NUBE_TRIAL_LIMITS = {
+  trialDays: { min: 1, max: 90 },
+  trialMaxCajas: { min: 1, max: 20 },
+} as const;
+
+/** Valores de create_account antes de que fueran configurables (011). */
+export const NUBE_TRIAL_FALLBACK: NubeTrialDefaults = { trialDays: 15, trialMaxCajas: 2 };
+
+export function validateNubeTrialDefaults(input: unknown): NubeTrialDefaults {
+  const v = (input ?? {}) as Record<string, unknown>;
+  const days = Number(v.trialDays);
+  const cajas = Number(v.trialMaxCajas);
+  const { trialDays: d, trialMaxCajas: c } = NUBE_TRIAL_LIMITS;
+  if (v.trialDays === "" || !Number.isInteger(days) || days < d.min || days > d.max) {
+    throw new Error(`Días de prueba: un número entero entre ${d.min} y ${d.max}.`);
+  }
+  if (v.trialMaxCajas === "" || !Number.isInteger(cajas) || cajas < c.min || cajas > c.max) {
+    throw new Error(`Equipos de la prueba: un número entero entre ${c.min} y ${c.max}.`);
+  }
+  return { trialDays: days, trialMaxCajas: cajas };
+}

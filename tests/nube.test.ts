@@ -6,7 +6,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { classifyDeviceId, isNubeDeviceId, looksLikeNubeId, normalizeDeviceId } from '@/lib/nube-id';
-import { buildNubeAccounts, nubeLicenseState, validateNubeLicenseInput, type NubeRawData } from '@/lib/nube-model';
+import {
+  buildNubeAccounts,
+  nubeLicenseState,
+  validateNubeLicenseInput,
+  validateNubeTrialDefaults,
+  type NubeRawData,
+} from '@/lib/nube-model';
 
 const PDN = 'PDN-' + 'A1B2C3D4'.repeat(4);
 const NOW = Date.parse('2026-11-16T12:00:00Z');
@@ -127,5 +133,25 @@ describe('validar licencia que llega del navegador', () => {
     expect(() => validateNubeLicenseInput({ status: 'active', maxCajas: 1, maxSedes: 0 })).toThrow();
     expect(() => validateNubeLicenseInput({ status: 'active', maxCajas: 1.5, maxSedes: 1 })).toThrow();
     expect(() => validateNubeLicenseInput({ status: 'active', maxCajas: 1, maxSedes: 1, expiresAt: 'mañana' })).toThrow();
+  });
+});
+
+describe('Prueba por defecto de las cuentas nuevas', () => {
+  it('acepta días y equipos dentro de los límites de la tabla', () => {
+    expect(validateNubeTrialDefaults({ trialDays: 15, trialMaxCajas: 2 })).toEqual({ trialDays: 15, trialMaxCajas: 2 });
+    expect(validateNubeTrialDefaults({ trialDays: '30', trialMaxCajas: '1' })).toEqual({ trialDays: 30, trialMaxCajas: 1 });
+    expect(validateNubeTrialDefaults({ trialDays: 90, trialMaxCajas: 20 })).toEqual({ trialDays: 90, trialMaxCajas: 20 });
+  });
+
+  it('rechaza días fuera de 1–90, decimales o vacíos', () => {
+    for (const trialDays of [0, 91, 7.5, '', null, undefined, 'abc', -3]) {
+      expect(() => validateNubeTrialDefaults({ trialDays, trialMaxCajas: 2 })).toThrow(/Días de prueba/);
+    }
+  });
+
+  it('rechaza equipos fuera de 1–20 (una prueba sin cajas no sirve)', () => {
+    for (const trialMaxCajas of [0, 21, 1.5, '', null]) {
+      expect(() => validateNubeTrialDefaults({ trialDays: 15, trialMaxCajas })).toThrow(/Equipos de la prueba/);
+    }
   });
 });
