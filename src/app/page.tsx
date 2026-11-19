@@ -16,6 +16,7 @@ import { MessagesView } from "@/components/views/messages-view";
 import { NotificationsView } from "@/components/views/notifications-view";
 import { VisitsView } from "@/components/views/visits-view";
 import { SettingsView } from "@/components/views/settings-view";
+import { NubeView } from "@/components/views/nube-view";
 import { SettingsProvider } from "@/lib/settings-context";
 import { Loader2 } from "lucide-react";
 
@@ -51,6 +52,8 @@ function AdminAppInternal() {
         {activeView === "notifications" && <NotificationsView />}
         {activeView === "visits" && <VisitsView />}
         {activeView === "settings" && <SettingsView />}
+        {activeView === "nube-accounts" && <NubeView mode="accounts" />}
+        {activeView === "nube-devices" && <NubeView mode="devices" />}
       </AdminShell>
       </SettingsProvider>
     </ProductProvider>

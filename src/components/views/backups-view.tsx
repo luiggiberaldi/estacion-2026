@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   DatabaseBackup,
   HardDriveDownload,
@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Eye,
   Download,
-  Copy,
   Inbox,
   CheckCircle2,
   XCircle,
@@ -45,7 +44,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -67,9 +65,10 @@ import {
   getFailedBackupRequests,
   getLicenses,
   sendRemoteReloadCommand,
+  getBackupHealth,
 } from "@/lib/actions";
 import type { Backup, BackupStatus, License } from "@/lib/types";
-import type { FailedBackupRequest } from "@/lib/actions";
+import type { FailedBackupRequest, BackupHealthItem } from "@/lib/actions";
 import { productName, sharesStationCloud } from "@/lib/products";
 import { useProduct } from "@/lib/product-context";
 import { usePagination } from "@/hooks/usePagination";
@@ -133,36 +132,51 @@ export function BackupsView() {
   const [isSendingRequest, setIsSendingRequest] = useState(false);
   const [pendingDeviceIds, setPendingDeviceIds] = useState<string[]>([]);
   const [failedRequests, setFailedRequests] = useState<FailedBackupRequest[]>([]);
+  const [staleBackups, setStaleBackups] = useState<BackupHealthItem[]>([]);
   const [expandedFailedId, setExpandedFailedId] = useState<string | null>(null);
   const [retryingDeviceId, setRetryingDeviceId] = useState<string | null>(null);
+  const [confirmReload, setConfirmReload] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadTargets, setReloadTargets] = useState<number | null>(null);
+
+  // Evita que una respuesta lenta de otro producto pise la actual.
+  const requestSeq = useRef(0);
 
   const fetchBackups = async () => {
+    const seq = ++requestSeq.current;
     // Farmacia no guarda respaldos en la nube de la Estación: nada que listar.
     if (!sharesStationCloud(productId)) {
       setBackups([]);
       setPendingDeviceIds([]);
       setFailedRequests([]);
+      setStaleBackups([]);
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
     try {
       const [backupsData, pendingIds, failed] = await Promise.all([
-        getBackups(),
-        getPendingBackupRequests(),
-        getFailedBackupRequests(),
+        getBackups(productId),
+        getPendingBackupRequests(productId),
+        getFailedBackupRequests(productId),
       ]);
+      if (seq !== requestSeq.current) return;
+      // La salud de respaldos es un aviso: si falla, no tumba la pantalla.
+      getBackupHealth(productId)
+        .then((h) => { if (seq === requestSeq.current) setStaleBackups(h); })
+        .catch((e) => toast({ title: "No se pudo revisar la salud de los respaldos", description: e?.message, variant: "destructive" }));
       setBackups(backupsData);
       setPendingDeviceIds(pendingIds);
       setFailedRequests(failed);
     } catch (err: any) {
+      if (seq !== requestSeq.current) return;
       toast({
         title: "Error al obtener respaldos",
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      if (seq === requestSeq.current) setIsLoading(false);
     }
   };
 
@@ -179,8 +193,12 @@ export function BackupsView() {
         (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
       );
       setPaidLicenses(paid);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      toast({
+        title: "No se pudo cargar la lista de equipos",
+        description: e?.message || "Error de servidor",
+        variant: "destructive",
+      });
     }
   };
 
@@ -296,31 +314,22 @@ export function BackupsView() {
     }
   }
 
-  async function handleCopyShare(bkp: Backup) {
-    if (!bkp.shareCode) {
-      toast({
-        title: "Sin código de compartir",
-        description: "Este respaldo no tiene share code asignado.",
-        variant: "destructive",
-      });
-      return;
-    }
+  // Abre la confirmación mostrando cuántas cajas recibirán la recarga.
+  async function askRemoteReload() {
+    setReloadTargets(null);
+    setConfirmReload(true);
     try {
-      await navigator.clipboard.writeText(bkp.shareCode);
-      toast({
-        title: "Código copiado",
-        description: `${bkp.shareCode} · ${bkp.alias ?? bkp.deviceId}`,
-      });
+      const lics = await getLicenses(productId);
+      setReloadTargets(
+        lics.filter((l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")).length
+      );
     } catch {
-      toast({
-        title: "No se pudo copiar",
-        description: "El portapapeles no está disponible.",
-        variant: "destructive",
-      });
+      setReloadTargets(null);
     }
   }
 
   async function handleRemoteReload() {
+    setIsReloading(true);
     try {
       const count = await sendRemoteReloadCommand(productId);
       toast(
@@ -341,11 +350,35 @@ export function BackupsView() {
         description: err.message || "Error de servidor",
         variant: "destructive",
       });
+    } finally {
+      setIsReloading(false);
+      setConfirmReload(false);
     }
   }
 
   return (
     <div className="space-y-5">
+      <Dialog open={confirmReload} onOpenChange={(o) => !isReloading && setConfirmReload(o)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Recargar todas las cajas?</DialogTitle>
+            <DialogDescription>
+              {reloadTargets === null
+                ? "Calculando cuántas cajas lo recibirán…"
+                : `Se enviará la orden de recarga a ${reloadTargets} caja(s) de ${productName(productId)} con licencia activa.`}{" "}
+              Si alguien está cobrando en este momento, su pantalla se reiniciará.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmReload(false)} disabled={isReloading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleRemoteReload} disabled={isReloading || reloadTargets === 0}>
+              {isReloading ? "Enviando…" : "Sí, recargar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {!sharesStationCloud(productId) && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground">
           <p className="font-semibold">{productName(productId)} usa su propia nube de datos</p>
@@ -369,7 +402,8 @@ export function BackupsView() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={handleRemoteReload}
+            onClick={askRemoteReload}
+            disabled={!sharesStationCloud(productId)}
             className="gap-2 border-sky-500/30 text-sky-700 dark:text-sky-400 hover:bg-sky-500/10"
             title="Enviar señal para recargar la app en todos los equipos conectados"
           >
@@ -433,6 +467,37 @@ export function BackupsView() {
           </>
         )}
       </section>
+
+      {/* ── Licencias de pago sin respaldo reciente ── */}
+      {!isLoading && staleBackups.length > 0 && (
+        <Card className="border-warning/40 shadow-tone-sm">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 text-warning" />
+              <h3 className="text-sm font-semibold text-foreground">
+                Licencias de pago sin respaldo en 48 h ({staleBackups.length})
+              </h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Estas cajas tienen licencia permanente o mensual activa pero no han subido su respaldo. Si un
+              equipo nunca respalda, lo más común es que perdió su vínculo con la nube.
+            </p>
+            <ul className="space-y-2">
+              {staleBackups.map((s) => (
+                <li key={s.deviceId} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{s.alias ?? shortDeviceId(s.deviceId)}</p>
+                    <p className="text-xs text-muted-foreground font-mono truncate">{s.deviceId}</p>
+                  </div>
+                  <Badge className="shrink-0 bg-warning/15 text-warning border-transparent">
+                    {s.lastBackupAt ? `Último: ${formatRelative(s.lastBackupAt)}` : "Nunca respaldó"}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Solicitudes fallidas ── */}
       {!isLoading && failedRequests.length > 0 && (
@@ -649,16 +714,6 @@ export function BackupsView() {
                                 <Download className="size-4" /> Extraer respaldo
                               </DropdownMenuItem>
                             ) : null}
-                            <DropdownMenuItem
-                              onClick={() => handleCopyShare(bkp)}
-                              disabled={!bkp.shareCode}
-                            >
-                              <Copy className="size-4" /> Copiar código share
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <div className="px-2 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                              Share: {bkp.shareCode ?? "—"}
-                            </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -711,7 +766,6 @@ export function BackupsView() {
                   value={STATUS_META[detail.status].label}
                 />
                 <Detail label="Creado" value={formatDate(detail.createdAt)} />
-                <Detail label="Share code" value={detail.shareCode ?? "—"} mono />
               </div>
               {detail.status === "completed" && (
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -727,14 +781,6 @@ export function BackupsView() {
                     )}
                     Extraer JSON
                   </Button>
-                  {detail.shareCode && (
-                    <Button
-                      variant="outline"
-                      onClick={() => handleCopyShare(detail)}
-                    >
-                      <Copy className="size-4" /> Copiar share
-                    </Button>
-                  )}
                 </div>
               )}
             </div>

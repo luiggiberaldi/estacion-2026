@@ -1,5 +1,29 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
+import { isBotUserAgent, isLocalIp } from "@/lib/utils";
+
+// Freno ligero por instancia (sin base): como mucho 1 visita por IP+ruta cada
+// 30 s y 30 por IP cada 10 min. Quien llene la tabla a propósito sigue
+// acotado; una persona normal nunca lo nota.
+const lastByKey = new Map<string, number>();
+const hitsByIp = new Map<string, number[]>();
+function tooFrequent(ip: string | null, path: string | null): boolean {
+  const now = Date.now();
+  const who = ip ?? "?";
+  const key = `${who}|${path ?? ""}`;
+  if (now - (lastByKey.get(key) ?? 0) < 30_000) return true;
+  const recent = (hitsByIp.get(who) ?? []).filter((t) => now - t < 10 * 60_000);
+  if (recent.length >= 30) {
+    hitsByIp.set(who, recent);
+    return true;
+  }
+  recent.push(now);
+  hitsByIp.set(who, recent);
+  lastByKey.set(key, now);
+  if (lastByKey.size > 5000) lastByKey.clear();
+  if (hitsByIp.size > 5000) hitsByIp.clear();
+  return false;
+}
 
 // POST /api/track — beacon público de visitas. Sin sesión (el middleware lo
 // deja pasar): registra a TODA persona que abre el link, incluso antes del
@@ -26,6 +50,11 @@ export async function POST(req: Request) {
     const fwd = req.headers.get("x-forwarded-for");
     const ip = fwd ? fwd.split(",")[0].trim() : null;
     const userAgent = req.headers.get("user-agent")?.slice(0, 300) ?? null;
+
+    // No registrar: la propia máquina (desarrollo), bots conocidos ni ráfagas.
+    if (isLocalIp(ip) || isBotUserAgent(userAgent) || tooFrequent(ip, body.path ?? null)) {
+      return NextResponse.json({ ok: true });
+    }
     const country = req.headers.get("x-vercel-ip-country");
     const rawCity = req.headers.get("x-vercel-ip-city");
     let city: string | null = null;

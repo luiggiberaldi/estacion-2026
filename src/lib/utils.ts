@@ -60,3 +60,16 @@ export function formatRelative(iso: string | null): string {
   return formatDate(iso);
 }
 
+
+/** IP de la propia máquina (desarrollo local): no es una visita real. */
+export function isLocalIp(ip: string | null | undefined): boolean {
+  if (!ip) return false;
+  const v = ip.trim().toLowerCase();
+  return v === "::1" || v === "127.0.0.1" || v === "::ffff:127.0.0.1" || v === "localhost";
+}
+
+/** ¿El user-agent es un rastreador/bot conocido? (parseo simple, sin librerías) */
+export function isBotUserAgent(ua: string | null | undefined): boolean {
+  if (!ua) return false;
+  return /bot|crawl|spider|slurp|headless|lighthouse|pingdom|uptime|monitor|curl|wget|python-requests|httpclient|preview|facebookexternalhit|whatsapp|telegram/i.test(ua);
+}

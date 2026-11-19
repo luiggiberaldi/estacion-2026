@@ -1,7 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Eye, CalendarDays, Users, Loader2, RotateCw } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import {
+  Eye,
+  CalendarDays,
+  Users,
+  Loader2,
+  RotateCw,
+  Globe2,
+  UserCheck,
+  AlertCircle,
+  Bot,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +25,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { cn, formatRelative, parseDevice } from "@/lib/utils";
-import {
-  getVisits,
-  getVisitStats,
-  type Visit,
-} from "@/lib/visits";
+import { cn, formatRelative, parseDevice, isBotUserAgent } from "@/lib/utils";
+import { getVisits, getVisitStats, type Visit, type VisitStats } from "@/lib/visits";
+
+const PAGE = 50;
+const EMPTY_STATS: VisitStats = { today: 0, last7Days: 0, uniqueToday: 0, total: 0, topCountries: [] };
 
 function Kpi({ icon: Icon, label, value, tone }: { icon: typeof Eye; label: string; value: string; tone: string }) {
   return (
@@ -58,68 +67,152 @@ function formatCaracas(iso: string): string {
   }
 }
 
+function cleanReferer(ref: string | null): string {
+  if (!ref) return "Directo";
+  return ref.replace(/^https?:\/\//, "");
+}
+
 export function VisitsView() {
   const { toast } = useToast();
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [stats, setStats] = useState({ today: 0, total: 0 });
+  const [stats, setStats] = useState<VisitStats>(EMPTY_STATS);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hideBots, setHideBots] = useState(true);
+  const [route, setRoute] = useState<"all" | "login" | "panel">("all");
+  const seq = useRef(0);
 
   const fetchData = async (showLoading = true) => {
+    const mine = ++seq.current;
     if (showLoading) setIsLoading(true);
+    setError(null);
     try {
-      const [v, s] = await Promise.all([getVisits(100), getVisitStats()]);
-      setVisits(v);
+      const [page, s] = await Promise.all([getVisits(PAGE, 0), getVisitStats()]);
+      if (mine !== seq.current) return;
+      setVisits(page.visits);
+      setHasMore(page.hasMore);
       setStats(s);
     } catch (err: any) {
+      if (mine !== seq.current) return;
+      setError(err?.message || "Error de servidor");
+    } finally {
+      if (mine === seq.current) setIsLoading(false);
+    }
+  };
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const page = await getVisits(PAGE, visits.length);
+      setVisits((prev) => [...prev, ...page.visits]);
+      setHasMore(page.hasMore);
+    } catch (err: any) {
       toast({
-        title: "Error al cargar visitas",
-        description: err.message || "Error de servidor",
+        title: "No se pudieron cargar más visitas",
+        description: err?.message,
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  const shown = useMemo(
+    () =>
+      visits.filter((v) => {
+        if (hideBots && isBotUserAgent(v.userAgent)) return false;
+        const isLogin = (v.path || "/") === "/login";
+        if (route === "login") return isLogin;
+        if (route === "panel") return !isLogin;
+        return true;
+      }),
+    [visits, hideBots, route]
+  );
+  const botsHidden = hideBots ? visits.filter((v) => isBotUserAgent(v.userAgent)).length : 0;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-display">Registro de visitas</h2>
           <p className="text-sm text-muted-foreground">
-            Toda persona que abre el link queda registrada aquí.
+            Quien abre el link queda registrado aquí. No se cuentan tus propias visitas locales ni los bots conocidos.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => fetchData(false)}>
-          <RotateCw className="size-4 mr-2" />
+          <RotateCw className={cn("size-4 mr-2", isLoading && "animate-spin")} />
           Actualizar
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      {error && (
+        <div className="bg-destructive/15 border-l-4 border-destructive p-4 rounded-r-xl text-sm text-destructive flex items-center gap-2">
+          <AlertCircle className="size-5 shrink-0" />
+          <span className="flex-1">No se pudieron cargar las visitas: {error}</span>
+          <Button variant="outline" size="sm" onClick={() => fetchData()}>
+            Reintentar
+          </Button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi icon={CalendarDays} label="Visitas hoy" value={String(stats.today)} tone="bg-primary/15 text-primary" />
         <Kpi
-          icon={CalendarDays}
-          label="Visitas hoy"
-          value={String(stats.today)}
-          tone="bg-primary/15 text-primary"
+          icon={UserCheck}
+          label="Personas distintas hoy"
+          value={String(stats.uniqueToday)}
+          tone="bg-success/15 text-success"
+        />
+        <Kpi
+          icon={Eye}
+          label="Últimos 7 días"
+          value={String(stats.last7Days)}
+          tone="bg-accent/15 text-accent-foreground"
         />
         <Kpi
           icon={Users}
           label="Visitas totales"
           value={String(stats.total)}
-          tone="bg-accent/15 text-accent-foreground"
+          tone="bg-secondary text-secondary-foreground"
         />
       </div>
 
+      {stats.topCountries.length > 0 && (
+        <Card className="border-border/60">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Globe2 className="size-4" /> Países (últimos 7 días)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {stats.topCountries.map((c) => (
+              <Badge key={c.country} variant="secondary" className="text-xs">
+                {c.country} · {c.count}
+              </Badge>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-border/60">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Últimas visitas
-          </CardTitle>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3 flex-wrap">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Últimas visitas</CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            {(["all", "login", "panel"] as const).map((r) => (
+              <Button key={r} size="sm" variant={route === r ? "default" : "outline"} onClick={() => setRoute(r)}>
+                {r === "all" ? "Todas" : r === "login" ? "Solo /login" : "Solo panel"}
+              </Button>
+            ))}
+            <Button size="sm" variant={hideBots ? "default" : "outline"} onClick={() => setHideBots((v) => !v)}>
+              <Bot className="size-4 mr-1" /> {hideBots ? "Bots ocultos" : "Mostrar bots"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -128,10 +221,14 @@ export function VisitsView() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
-          ) : visits.length === 0 ? (
+          ) : shown.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               <Eye className="size-8 mx-auto mb-2 opacity-40" />
-              Aún no hay visitas registradas.
+              {error
+                ? "No se pudo cargar la lista."
+                : visits.length === 0
+                  ? "Aún no hay visitas registradas."
+                  : "Ninguna visita coincide con el filtro."}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -143,10 +240,11 @@ export function VisitsView() {
                     <TableHead>IP</TableHead>
                     <TableHead>Ubicación</TableHead>
                     <TableHead>Dispositivo</TableHead>
+                    <TableHead>Origen</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visits.map((v) => (
+                  {shown.map((v) => (
                     <TableRow key={v.id}>
                       <TableCell className="whitespace-nowrap text-xs">
                         <div className="font-medium">{formatCaracas(v.createdAt)}</div>
@@ -162,10 +260,19 @@ export function VisitsView() {
                         {[v.city, v.country].filter(Boolean).join(", ") || "—"}
                       </TableCell>
                       <TableCell className="text-xs">
-                        {parseDevice(v.userAgent)}
-                        {v.screen && (
-                          <span className="text-muted-foreground"> · {v.screen}</span>
+                        {isBotUserAgent(v.userAgent) ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Bot
+                          </Badge>
+                        ) : (
+                          <>
+                            {parseDevice(v.userAgent)}
+                            {v.screen && <span className="text-muted-foreground"> · {v.screen}</span>}
+                          </>
                         )}
+                      </TableCell>
+                      <TableCell className="text-xs max-w-[180px] truncate" title={v.referer ?? ""}>
+                        {cleanReferer(v.referer)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -174,13 +281,20 @@ export function VisitsView() {
             </div>
           )}
         </CardContent>
+        {!isLoading && (hasMore || botsHidden > 0) && (
+          <div className="flex items-center justify-between gap-3 border-t border-border/50 p-3 text-xs text-muted-foreground">
+            <span>
+              Mostrando {shown.length} de {visits.length} cargadas
+              {botsHidden > 0 ? ` (${botsHidden} de bots ocultas)` : ""}
+            </span>
+            {hasMore && (
+              <Button size="sm" variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <Loader2 className="size-4 animate-spin" /> : "Cargar más"}
+              </Button>
+            )}
+          </div>
+        )}
       </Card>
-
-      {isLoading && (
-        <div className="flex justify-center">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      )}
     </div>
   );
 }

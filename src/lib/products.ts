@@ -10,7 +10,7 @@
 
 import { PRODUCT_PRICES as LICENSE_PRODUCT_PRICES } from "./licensePolicy";
 
-export const PRODUCT_LITE = { id: "bodega", name: "PreciosAlDía Lite", short: "Lite" } as const;
+export const PRODUCT_LITE = { id: "bodega", name: "PreciosAlDía Bodega", short: "Bodega" } as const;
 
 // PRO queda preservado para reactivarlo después, pero no se ofrece en la UI por ahora.
 export const PRODUCT_PRO = { id: "pro", name: "PreciosAlDía Pro", short: "Pro" } as const;

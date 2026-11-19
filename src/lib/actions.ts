@@ -11,6 +11,7 @@ import { requireAdmin } from "./require-admin";
 import { loadSettings } from "./settings-store";
 import { termsFor } from "./settings-schema";
 import { LICENSE_TYPES } from "./licensePolicy";
+import { looksLikeNubeId } from "./nube-id";
 import { selectAllPaged, selectInBatches } from "./db-paging";
 
 function decompressBackupData(backupData: any): any {
@@ -145,7 +146,8 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       deviceId: l.device_id,
       productId: l.product_id ?? productId,
       alias: businessName,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
+      clientCode: structuredClientCode,
       clientPhone: cl.phone || null,
       marketingEmail,
       type: l.type as LicenseType,
@@ -155,9 +157,6 @@ export async function getLicenses(productId: ProductId = "bodega"): Promise<Lice
       expiresAt: l.expires_at || null,
       lastSeenAt: deviceLastSeen,
       activatedAt: l.created_at || null,
-      // Sin columnas de plataforma/versión en account_devices: no fabricar.
-      appVersion: null,
-      platform: null,
       isOnline: deriveIsOnline(deviceLastSeen),
       notes: cl.notes || null,
     };
@@ -188,8 +187,6 @@ export async function getDemos(productId: ProductId = "bodega"): Promise<Demo[]>
         expiresAt: l.expiresAt || "",
         daysRemaining,
         isOnline: l.isOnline,
-        appVersion: l.appVersion,
-        platform: l.platform,
       };
     });
 }
@@ -205,12 +202,17 @@ export async function createOrUpdateLicense(licenseData: {
   status?: LicenseStatus;
   /** Producto comercial. Default 'bodega' (Lite) por compatibilidad. */
   productId?: ProductId;
-}): Promise<void> {
+}): Promise<{ warning?: string }> {
+  let warning: string | undefined;
   await requireAdmin();
   if (!licenseData || !licenseData.deviceId || typeof licenseData.deviceId !== "string") {
     throw new Error("El ID del dispositivo es obligatorio.");
   }
   assertDeviceIdArg(licenseData.deviceId);
+  if (looksLikeNubeId(licenseData.deviceId)) {
+    // Un equipo de la Nube no tiene licencia propia: la licencia es de su cuenta.
+    throw new Error("Ese ID es de Precios al Día Nube: su licencia se cambia en la pestaña Nube (Cuentas Nube).");
+  }
   assertLicenseType(licenseData.type);
   const admin = getSupabaseAdmin();
   const productId: ProductId = licenseData.productId ?? "bodega";
@@ -220,6 +222,7 @@ export async function createOrUpdateLicense(licenseData: {
   }
   for (const [field, value, max] of [
     ["alias", licenseData.alias, 120],
+    ["cliente", licenseData.clientName, 120],
     ["teléfono", licenseData.clientPhone, 40],
     ["notas", licenseData.notes, 1000],
   ] as const) {
@@ -351,32 +354,40 @@ export async function createOrUpdateLicense(licenseData: {
     businessNameField = `${businessNameField} | ${prevMarketingEmail}`;
   }
 
-  if (existingCl) {
-    const { error } = await admin
-      .from("cloud_licenses")
-      .update({
-        email: email,
-        license_type: licenseData.type,
-        business_name: businessNameField,
-        phone: phone,
-        is_active: isActive,
-        updated_at: now
-      })
-      .eq("id", existingCl.id);
-    clErr = error;
-  } else {
-    const { error } = await admin
-      .from("cloud_licenses")
-      .insert({
-        device_id: deviceId,
-        email: email,
-        license_type: licenseData.type,
-        business_name: businessNameField,
-        phone: phone,
-        is_active: isActive,
-        updated_at: now
-      });
-    clErr = error;
+  // Cliente y notas (migración 011): solo se escriben si el formulario trae un
+  // valor; las acciones rápidas (cambiar tipo, extender) no los tocan.
+  const extras: Record<string, string> = {};
+  const clientName = licenseData.clientName?.trim();
+  const notes = licenseData.notes?.trim();
+  if (clientName) extras.client_name = clientName;
+  if (notes) extras.notes = notes;
+
+  const writeCloudLicense = async (fields: Record<string, unknown>) => {
+    if (existingCl) {
+      const { error } = await admin.from("cloud_licenses").update(fields).eq("id", existingCl.id);
+      return error;
+    }
+    const { error } = await admin.from("cloud_licenses").insert({ device_id: deviceId, ...fields });
+    return error;
+  };
+  const baseFields = {
+    email: email,
+    license_type: licenseData.type,
+    business_name: businessNameField,
+    phone: phone,
+    is_active: isActive,
+    updated_at: now,
+  };
+
+  clErr = await writeCloudLicense({ ...baseFields, ...extras });
+  if (clErr && Object.keys(extras).length > 0 && isMissingColumnError(clErr)) {
+    // Sin la migración 011 la licencia se guarda igual, pero se avisa en vez
+    // de descartar el cliente y las notas en silencio.
+    clErr = await writeCloudLicense(baseFields);
+    if (!clErr) {
+      warning =
+        "La licencia se guardó, pero el cliente y las notas no: falta aplicar la migración 011 en la base.";
+    }
   }
 
   if (clErr) throw new Error(`Error al guardar en cloud_licenses: ${clErr.message}`);
@@ -393,6 +404,12 @@ export async function createOrUpdateLicense(licenseData: {
       productId
     );
   }
+  return warning ? { warning } : {};
+}
+
+/** Columna desconocida para PostgREST (caché de esquema) o para Postgres. */
+function isMissingColumnError(err: { code?: string; message?: string }): boolean {
+  return err.code === "PGRST204" || err.code === "42703";
 }
 
 /** Cambia solo el alias comercial (business_name), conservando el email de marketing. */
@@ -496,8 +513,9 @@ export async function deleteLicense(deviceId: string, productId: ProductId = "bo
 // RESPALDOS (Lectura de public.cloud_backups y envío de solicitudes)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getBackups(): Promise<Backup[]> {
+export async function getBackups(productId?: ProductId): Promise<Backup[]> {
   await requireAdmin();
+  if (productId !== undefined) assertProduct(productId);
   const admin = getSupabaseAdmin();
 
   // 1. Obtener metadata de respaldos. IMPORTANTE: no traer la columna completa
@@ -520,10 +538,11 @@ export async function getBackups(): Promise<Backup[]> {
   // 2. Obtener licencias para extraer alias y nombre de cliente (solo de esos equipos)
   const dbCloudLicenses = await selectInBatches<any>(
     dbBackups.map((b: any) => b.device_id as string),
+    // "*": client_name solo existe tras la migración 011.
     (batch) =>
       admin
         .from("cloud_licenses")
-        .select("id, device_id, business_name, email, created_at")
+        .select("*")
         .in("device_id", batch)
         .order("id", { ascending: true }),
     "Error al obtener metadatos"
@@ -531,21 +550,26 @@ export async function getBackups(): Promise<Backup[]> {
 
   const clMap = new Map(dbCloudLicenses.map((cl: any) => [cl.device_id, cl]));
 
-  return dbBackups.map((b: any) => {
+  // Con producto: solo equipos con licencia de PAGO activa (permanente o
+  // mensual) de ese producto. Los respaldos de demos, revocadas, equipos sin
+  // licencia o de otro producto no se listan (siguen guardados en la base).
+  let rowsToShow: any[] = dbBackups;
+  if (productId !== undefined) {
+    const paid = await paidBackupDeviceIds(productId);
+    rowsToShow = rowsToShow.filter((b) => paid.has(b.device_id));
+  }
+
+  return rowsToShow.map((b: any) => {
     const cl = clMap.get(b.device_id) || {};
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
-    // Structured client code
-    const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
-    const last4 = b.device_id ? b.device_id.slice(-4).toUpperCase() : '0000';
-    const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
     return {
       id: b.id,
       deviceId: b.device_id,
       alias: businessName,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
       marketingEmail: marketingEmail || b.email || null,
       driveUrl: b.drive_url || null,
       sizeBytes: Number(b.size_bytes || 0),
@@ -554,9 +578,18 @@ export async function getBackups(): Promise<Backup[]> {
       productCount: Number(b.product_count || 0),
       salesCount: Number(b.sales_count || 0),
       customerCount: Number(b.customer_count || 0),
-      shareCode: null,
     };
   });
+}
+
+/** Equipos con licencia de pago activa (permanente/mensual) del producto, según licensePolicy. */
+async function paidBackupDeviceIds(productId: ProductId): Promise<Set<string>> {
+  const licenses = await getLicenses(productId);
+  return new Set(
+    licenses
+      .filter((l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly"))
+      .map((l) => l.deviceId)
+  );
 }
 
 export async function getBackupData(backupId: string): Promise<any> {
@@ -612,6 +645,25 @@ export async function requestBackup(deviceId: string): Promise<void> {
   const now = new Date().toISOString();
   await assertDeviceInStationCloud(cleanId);
 
+  // Solo licencias de pago vivas (permanente/mensual): la caja ignora el resto y
+  // la solicitud quedaba "pendiente" para siempre.
+  const { data: lic, error: licErr } = await admin
+    .from("licenses")
+    .select("product_id, type, is_active, expires_at")
+    .eq("device_id", cleanId)
+    .eq("product_id", "bodega")
+    .maybeSingle();
+  if (licErr) throw new Error(`Error al verificar la licencia del equipo: ${licErr.message}`);
+  const { settings } = await loadSettings();
+  const graceDays = termsFor(settings, "bodega").monthlyGraceDays;
+  const paid =
+    !!lic &&
+    (lic.type === "permanent" || lic.type === "monthly") &&
+    deriveStatus(lic.is_active, lic.expires_at, lic.type, graceDays) === "active";
+  if (!paid) {
+    throw new Error("Este equipo no tiene una licencia permanente o mensual activa: no tiene respaldo en la nube.");
+  }
+
   // Limpiar solicitud previa del mismo dispositivo si existe
   await admin.from("backup_requests").delete().eq("device_id", cleanId);
 
@@ -655,16 +707,21 @@ export async function requestAllBackups(productId: ProductId): Promise<number> {
   return paidLicenses.length;
 }
 
-export async function getPendingBackupRequests(): Promise<string[]> {
+export async function getPendingBackupRequests(productId?: ProductId): Promise<string[]> {
   await requireAdmin();
+  if (productId !== undefined) assertProduct(productId);
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("backup_requests")
     .select("device_id")
     .eq("status", "pending");
 
-  if (error) return [];
-  return (data || []).map((r: any) => r.device_id);
+  // Antes devolvía [] ante un error y la pantalla decía "nada pendiente".
+  if (error) throw new Error(`Error al consultar solicitudes pendientes: ${error.message}`);
+  const ids = (data || []).map((r: any) => r.device_id as string);
+  if (productId === undefined) return ids;
+  const paid = await paidBackupDeviceIds(productId);
+  return ids.filter((id) => paid.has(id));
 }
 
 export interface FailedBackupRequest {
@@ -698,8 +755,9 @@ async function resolveBackupAliases(
  * Tolerante a que la columna `error` aún no exista (migración pendiente):
  * en ese caso devuelve las filas sin motivo.
  */
-export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> {
+export async function getFailedBackupRequests(productId?: ProductId): Promise<FailedBackupRequest[]> {
   await requireAdmin();
+  if (productId !== undefined) assertProduct(productId);
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("backup_requests")
@@ -718,12 +776,19 @@ export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> 
       .from("backup_requests")
       .select("device_id, created_at")
       .eq("status", "failed");
-    if (retry.error) return [];
+    if (retry.error) throw new Error(`Error al consultar respaldos fallidos: ${retry.error.message}`);
     rows = ((retry.data || []) as any[]).map((r) => ({
       device_id: r.device_id,
       created_at: r.created_at,
       error: null,
     }));
+  }
+
+  // Con producto: solo equipos con licencia de pago activa (el resto, p. ej. las
+  // 39 solicitudes "zombie" de demos y equipos sin licencia, no se muestra).
+  if (productId !== undefined) {
+    const paid = await paidBackupDeviceIds(productId);
+    rows = rows.filter((r) => paid.has(r.device_id));
   }
 
   const aliasMap = await resolveBackupAliases(rows.map((r) => r.device_id));
@@ -733,6 +798,61 @@ export async function getFailedBackupRequests(): Promise<FailedBackupRequest[]> 
     error: r.error,
     createdAt: r.created_at,
   }));
+}
+
+/** Horas sin respaldo a partir de las que una licencia de pago se considera en riesgo. */
+const BACKUP_STALE_HOURS = 48;
+
+export interface BackupHealthItem {
+  deviceId: string;
+  alias: string | null;
+  type: LicenseType;
+  /** Fecha del último respaldo en la nube, o null si nunca respaldó. */
+  lastBackupAt: string | null;
+  /** Desde cuándo debería existir un respaldo: el último, o la creación de la licencia. */
+  since: string;
+}
+
+/**
+ * Licencias de pago activas (permanente/mensual, producto con nube de la
+ * Estación) que NO tienen un respaldo en las últimas BACKUP_STALE_HOURS horas.
+ * Las licencias nuevas tienen ese mismo margen antes de aparecer.
+ */
+export async function getBackupHealth(productId: ProductId = "bodega"): Promise<BackupHealthItem[]> {
+  await requireAdmin();
+  assertProduct(productId);
+  if (!sharesStationCloud(productId)) return [];
+  const licenses = await getLicenses(productId);
+  const paid = licenses.filter(
+    (l) => l.status === "active" && (l.type === "permanent" || l.type === "monthly")
+  );
+  if (paid.length === 0) return [];
+
+  const admin = getSupabaseAdmin();
+  const data = await selectInBatches<any>(
+    paid.map((l) => l.deviceId),
+    (batch) =>
+      admin.from("cloud_backups").select("id, device_id, updated_at").in("device_id", batch).order("id", { ascending: true }),
+    "Error al consultar respaldos"
+  );
+  const lastByDevice = new Map<string, string>(
+    (data as any[]).map((b) => [b.device_id, b.updated_at as string])
+  );
+
+  const limit = Date.now() - BACKUP_STALE_HOURS * 3600 * 1000;
+  return paid
+    .map((l) => {
+      const lastBackupAt = lastByDevice.get(l.deviceId) ?? null;
+      return {
+        deviceId: l.deviceId,
+        alias: l.alias,
+        type: l.type,
+        lastBackupAt,
+        since: lastBackupAt ?? l.createdAt,
+      };
+    })
+    .filter((i) => new Date(i.since).getTime() < limit)
+    .sort((a, b) => new Date(a.since).getTime() - new Date(b.since).getTime());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -832,7 +952,7 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
     (batch) =>
       admin
         .from("cloud_licenses")
-        .select("id, device_id, phone, business_name, created_at")
+        .select("*") // client_name solo existe tras la migración 011
         .in("device_id", batch)
         .order("id", { ascending: true }),
     "Error al obtener metadatos"
@@ -845,27 +965,19 @@ export async function getDevices(productId: ProductId = "bodega"): Promise<Devic
 
     const { businessName, marketingEmail } = parseBusinessName(cl.business_name);
 
-    // Structured client code
-    const dateStr = cl.created_at ? new Date(cl.created_at).toISOString().slice(0, 10).replace(/-/g, '') : 'N/A';
-    const last4 = d.device_id ? d.device_id.slice(-4).toUpperCase() : '0000';
-    const structuredClientCode = `CLI-${dateStr}-${last4}`;
 
     return {
       id: d.id,
       deviceId: d.device_id,
       alias: d.device_alias || null,
-      clientName: structuredClientCode,
+      clientName: cl.client_name || null,
       clientPhone: cl.phone || null,
       email: d.email || null,
       marketingEmail,
-      // account_devices no tiene columnas de plataforma/versión: no fabricar.
-      platform: null,
-      appVersion: null,
       registeredAt: d.created_at,
       lastSeenAt: d.last_seen || null,
       isOnline: deriveIsOnline(d.last_seen),
       businessName: businessName || null,
-      rif: null,
     };
   });
 }
@@ -892,7 +1004,7 @@ export async function updateDeviceAlias(deviceId: string, alias: string): Promis
 export async function getDashboardStats(productId: ProductId = "bodega"): Promise<DashboardStats> {
   await requireAdmin();
   assertProduct(productId);
-  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
+  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups(productId)]);
   return computeDashboardStats(licenses, backups, productId);
 }
 
@@ -943,7 +1055,7 @@ async function computeDashboardStats(
 export async function getDashboardData(productId: ProductId = "bodega"): Promise<{ stats: DashboardStats; licenses: License[] }> {
   await requireAdmin();
   assertProduct(productId);
-  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups()]);
+  const [licenses, backups] = await Promise.all([getLicenses(productId), getBackups(productId)]);
   const stats = await computeDashboardStats(licenses, backups, productId);
   return { stats, licenses };
 }

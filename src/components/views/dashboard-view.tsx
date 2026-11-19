@@ -121,14 +121,17 @@ export function DashboardView() {
   const { productId } = useProduct();
 
   useEffect(() => {
+    let cancelled = false;
     const fetchDashboardData = async () => {
+      setIsLoading(true);
       try {
         setError(null);
         const { stats: statsData, licenses } = await getDashboardData(productId);
+        if (cancelled) return;
         setStats(statsData);
         // Derivar demos (incluye demo3 y demo7; sin fechas fabricadas)
         const activeDemos = licenses
-          .filter((l) => isDemoType(l.type) && l.status !== "revoked")
+          .filter((l) => isDemoType(l.type) && l.status === "active" && !!l.expiresAt)
           .map((l) => {
             const daysRemaining = l.expiresAt
               ? Math.max(0, Math.ceil((new Date(l.expiresAt).getTime() - Date.now()) / 86400000))
@@ -145,8 +148,6 @@ export function DashboardView() {
               expiresAt: l.expiresAt || "",
               daysRemaining,
               isOnline: l.isOnline,
-              appVersion: null,
-              platform: null,
             };
           });
         setDemos(activeDemos);
@@ -179,23 +180,27 @@ export function DashboardView() {
             id: `act_${i}`,
             action,
             description: desc,
-            adminEmail: "admin@preciosaldia.com",
+            adminEmail: "",
             targetDeviceId: l.deviceId,
             targetAlias: l.alias,
-            timestamp: l.lastSeenAt || l.createdAt,
+            timestamp: l.createdAt,
             metadata: null
           };
         });
         setActivity(dynamicActivity);
-      } catch (err) {
+      } catch (err: any) {
+        if (cancelled) return;
         console.error("Error loading dashboard data:", err);
-        setError("Error de conexión: No se pudo establecer la conexión con la base de datos.");
+        setError(`No se pudieron cargar los datos: ${err?.message || "error desconocido"}`);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     fetchDashboardData();
+    return () => {
+      cancelled = true;
+    };
   }, [productId]);
 
   const expiringDemos = demos
@@ -276,7 +281,7 @@ export function DashboardView() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="size-4 text-primary" strokeWidth={2} />
-                Actividad reciente
+                Últimas licencias
               </CardTitle>
               <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
                 Últimas {activity.length || "—"}
@@ -299,8 +304,8 @@ export function DashboardView() {
             ) : activity.length === 0 ? (
               <EmptyState
                 icon={Activity}
-                title="Sin actividad reciente"
-                description="Las acciones del administrador aparecerán aquí."
+                title="Sin licencias todavía"
+                description="Las licencias emitidas aparecerán aquí."
               />
             ) : (
               <ul className="divide-y divide-border/60 max-h-[28rem] overflow-y-auto">
@@ -430,7 +435,7 @@ export function DashboardView() {
             </div>
             <div className="text-right">
               <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                Ingreso histórico total
+                Valor estimado de la cartera
               </p>
               <p className="text-xl font-display text-foreground">
                 {formatCurrency(stats.totalRevenue)}

@@ -27,7 +27,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Estación Maestra · Precios al Día",
   description:
-    "Panel de administración para gestionar licencias, demos, backups y mensualidades de Precios al Día (Lite y Farmacia).",
+    "Panel de administración para gestionar licencias, demos, backups y mensualidades de Precios al Día (Bodega y Farmacia).",
   keywords: [
     "Precios al Día",
     "Bodega",

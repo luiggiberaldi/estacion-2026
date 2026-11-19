@@ -85,7 +85,7 @@ describe('validateSettings', () => {
 
   it('rechaza basura', () => {
     expect(() => validateSettings(null)).toThrow(SettingsValidationError);
-    expect(() => validateSettings({})).toThrow(/Lite/);
+    expect(() => validateSettings({})).toThrow(/Bodega/);
   });
 });
 

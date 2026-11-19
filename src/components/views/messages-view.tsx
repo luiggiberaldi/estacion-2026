@@ -102,7 +102,7 @@ function fillTemplate(
   const days = daysUntil(l.expiresAt);
   return t.body
     .replaceAll("{nombre}", clientLabel(l))
-    .replaceAll("{codigo}", l.clientName ?? "—")
+    .replaceAll("{codigo}", l.clientCode)
     .replaceAll("{licencia}", TYPE_LABEL[l.type] ?? l.type)
     .replaceAll("{vencimiento}", formatDate(l.expiresAt))
     .replaceAll("{dias}", days === null ? "—" : days <= 0 ? "hoy" : `${days} día${days === 1 ? "" : "s"}`)
